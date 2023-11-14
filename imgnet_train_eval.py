@@ -1,5 +1,4 @@
-## resnet50 的wbit控制在resnet50.py里，wbit = 32/ wbit = 8test git
-## python ./imgnet_train_eval.py --Wbits 8 --Abit 8 --wd 1e-4 --lr 0.000008 --pretrain --max_epochs 2
+##  python ./imgnet_train_eval.py --Wbits 8 --Abit 8 --lr 5e-6 --wd 1e-4  --pretrain --max_epochs 2  --if_train 0 --all_validate 1  --log_interval 50
 import os
 import time
 import argparse

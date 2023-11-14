@@ -2,3 +2,5 @@ ckpt/
 core
 logs/
 param_saved_txt/
+nets/__pycache__/
+utils/__pycache__/
