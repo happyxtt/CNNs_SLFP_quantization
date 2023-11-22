@@ -1,4 +1,6 @@
 import numpy as np
+import torch
+import matplotlib.pyplot as plt
 
 def convkeys_squeezenet():
     total_num =  1
@@ -82,6 +84,47 @@ def backup_resnet():
     print("Ka = ", Ka)
     print("Kw = ", Kw)
 
+def pre_mobilenet_weight():
+    model = torch.load('ckpt/mobnetv1_new.pth')
+    
+    counter = 0
+    weight = [0.8589458465576172, 1.9635683298110962, 1.2365360260009766, 0.5438900589942932, 1.2541989088058472, 0.9803679585456848, 1.236991286277771, 0.28881916403770447, 1.0297598838806152, 0.8297733068466187, 0.7577158212661743, 0.23283751308918, 0.5724515318870544, 0.6798462867736816, 0.5818396806716919, 0.8004610538482666, 0.5788508057594299, 0.589914083480835, 0.721644401550293, 0.7284839749336243, 0.8877108097076416, 0.4677695035934448, 0.8636178374290466, 0.306072473526001, 0.8925297856330872, 0.21044661104679108, 0.6525866389274597, 0.918532133102417]
+    Kw = np.array(weight)/15.5
+
+    # Iterate over each named parameter in the model
+
+    for name, param in model.items():
+        # Check if the name contains "weight"
+        if '0.weight' in name or '3.weight' in name or 'fc.weight' in name:
+            # Multiply the parameter by the factor
+            print(name)
+            print(counter)
+            print(Kw[counter])
+            param.data.div_(Kw[counter])
+            counter += 1
+    # Save the modified model
+    torch.save(model, 'ckpt/mobnetv1_m2_防止误改.pth')
+
+    
+    selected_weights = []
+    bn_params = []
+    for key, value in model.items():
+        if 'weight' in key  :
+            selected_weights.append(value.detach().cpu().numpy())
+    #for key, value in model.items():
+    #    if 'layer4.5.num_batches_tracked' in key:
+    #        print (value.detach().cpu().numpy())
+    # 合并选定键的权重数据
+    combined_weights = []
+    for weights in selected_weights:
+        combined_weights.extend(weights.flatten())
+    print(type(combined_weights))
+    max_value = max(combined_weights, key = abs)
+    min_value = min(combined_weights, key = abs)
+    print(max_value)
+    print(min_value)
+
+    
 
 if __name__ == '__main__':  
-    backup_resnet()
+    pre_mobilenet_weight()

@@ -31,7 +31,7 @@ parser.add_argument('--log_name', type=str, default='imgnet-1k')
 parser.add_argument('--pretrain', action='store_true', default=True)
 parser.add_argument('--if_train', type = int, default=0)
 parser.add_argument('--all_validate', type = int, default=0)
-parser.add_argument('--pretrain_dir', type=str, default='./ckpt/resnet-50.pth')
+parser.add_argument('--pretrain_dir', type=str, default='./ckpt/mobnetv1_m2.pth')
 
 parser.add_argument('--Wbits', type=int, default=32)
 parser.add_argument('--Abits', type=int, default=32)
@@ -83,10 +83,10 @@ def main():
 
   # create model
   print("=> creating model...")
-  #model = MobileNetV1_Q(ch_in=3, wbit=cfg.Wbits, abit=cfg.Abits).cuda()
+  model = MobileNetV1_m2(ch_in=3, wbit=cfg.Wbits, abit=cfg.Abits).cuda()
   #model = AlexNet(wbit = cfg.Wbits).cuda()
   #model = SqueezeNet(wbit = cfg.Wbits).cuda()
-  model = ResNet50(wbit = cfg.Wbits).cuda()
+  #model = ResNet50(wbit = cfg.Wbits).cuda()
 
   # optionally resume from a checkpoint
   if cfg.pretrain:
@@ -125,7 +125,7 @@ def main():
         start_time = time.time()
         summary_writer.add_scalar('cls_loss', loss.item(), step)
         summary_writer.add_scalar('learning rate', optimizer.param_groups[0]['lr'], step)
-        torch.save(model.state_dict(), os.path.join(cfg.ckpt_dir, 'resnet_8perclass_slfp34.pth'))
+        torch.save(model.state_dict(), os.path.join(cfg.ckpt_dir, 'mobilenet_slfp34_m2.pth'))
 
 
   def validate(epoch):

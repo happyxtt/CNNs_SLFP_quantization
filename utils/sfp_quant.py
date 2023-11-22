@@ -21,19 +21,18 @@ def uniform_quantize(k):  #k-bit定点量化tensor
             n = float(2 ** k - 1)
             out = torch.round(input / n) * n
             '''
-
-            
+            '''
             N = 8  #sfp<3,n>
             sign = torch.sign(input)
             input = torch.abs(input)
-            input[input <= 0.117] = 1e-10
-            input[(input >= 0.117) & (input < 0.125)] = 0.125
+            input[input <= 0.0625] = 1e-10
+            input[(input >= 0.0625) & (input < 0.125)] = 0.125
             input = torch.clamp(input, 0, 15)
             scaling_factor = pow(2, torch.floor(torch.log2(input)))
             out = torch.mul(sign, torch.mul(torch.round(torch.div(input, scaling_factor)*N)/N , scaling_factor))
-            
-
             '''
+
+            
             N = 16  # SLFP<3,n>
             sign = torch.sign(input)
             input = torch.abs(input)
@@ -43,7 +42,7 @@ def uniform_quantize(k):  #k-bit定点量化tensor
             scaling_factor = pow(2, torch.floor(torch.log2(input)))
             out = pow(2,torch.floor(torch.log2(input)) + torch.round(torch.log2(torch.div(input,scaling_factor))*N)/N)
             out = torch.mul(sign, out)     
-            '''
+            
         
             '''
             #####  sfp<4,3>
@@ -119,6 +118,42 @@ def linear_Q_fn(w_bit):      #全连接层
     def forward(self, input):
       self.input_q = self.quantize_fn(input/0.6350061355098602)
       self.weight_q = self.quantize_fn(self.weight/0.05926013761951077)
+      self.bias_q = self.bias /0.6350061355098602 /0.05926013761951077
+      out =  F.linear(self.input_q, self.weight_q, self.bias)*0.6350061355098602*0.05926013761951077
+      return out
+  return Linear_Q
+
+def conv2d_Q_mobilenet_m2(w_bit, Kw, Ka):
+  class Conv2d_Q(nn.Conv2d):  
+    def __init__(self, in_channels, out_channels, kernel_size, Kw = Kw, Ka = Ka, stride=1, 
+                padding=0, dilation=1, groups=1, bias=False):
+      super(Conv2d_Q, self).__init__(in_channels, out_channels, kernel_size, stride,
+                                    padding, dilation, groups, bias)
+      self.w_bit = w_bit
+      self.quantize_fn = weight_quantize_fn(w_bit=w_bit)
+      self.Kw = torch.tensor(Kw)
+      self.Ka = torch.tensor(Ka)
+      #print(self.Kw)
+      #print(self.Ka)
+
+    def forward(self, input, order=None):
+      self.input_q = self.quantize_fn(input/self.Ka) #量化并缩放激活值
+      self.weight_q = self.quantize_fn(self.weight)  #量化缩放后权重
+      self.output = F.conv2d(self.input_q, self.weight_q, self.bias, self.stride,
+                    self.padding, self.dilation, self.groups)*self.Ka * self.Kw
+      return self.output
+  return Conv2d_Q
+
+def linear_Q_m2(w_bit):      #全连接层
+  class Linear_Q(nn.Linear):
+    def __init__(self, in_features, out_features, bias=True):
+      super(Linear_Q, self).__init__(in_features, out_features, bias)
+      self.w_bit = w_bit
+      self.quantize_fn = weight_quantize_fn(w_bit=w_bit)
+
+    def forward(self, input):
+      self.input_q = self.quantize_fn(input/0.6350061355098602)
+      self.weight_q = self.quantize_fn(self.weight)
       self.bias_q = self.bias /0.6350061355098602 /0.05926013761951077
       out =  F.linear(self.input_q, self.weight_q, self.bias)*0.6350061355098602*0.05926013761951077
       return out
