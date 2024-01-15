@@ -4,7 +4,6 @@ import torch.nn.functional as F
 import numpy as np
 #np.set_printoptions(threshold=np.inf)
 
-
 def uniform_quantize(k):  #k-bit定点量化tensor
   class qfn(torch.autograd.Function):  # 和继承nn.Module比，autograd.Function还能自定义backward
 
@@ -123,7 +122,7 @@ def linear_Q_fn(w_bit):      #全连接层
       return out
   return Linear_Q
 
-def conv2d_Q_mobilenet_m2(w_bit, Kw, Ka):
+def conv2d_Q_mobilenet_m2(w_bit, Kw, Ka):   # mode 2: learnable parameter: w/Kw
   class Conv2d_Q(nn.Conv2d):  
     def __init__(self, in_channels, out_channels, kernel_size, Kw = Kw, Ka = Ka, stride=1, 
                 padding=0, dilation=1, groups=1, bias=False):
@@ -144,7 +143,7 @@ def conv2d_Q_mobilenet_m2(w_bit, Kw, Ka):
       return self.output
   return Conv2d_Q
 
-def linear_Q_m2(w_bit):      #全连接层
+def linear_Q_m2(w_bit):                  # mode 2: learnable parameter: w/Kw
   class Linear_Q(nn.Linear):
     def __init__(self, in_features, out_features, bias=True):
       super(Linear_Q, self).__init__(in_features, out_features, bias)

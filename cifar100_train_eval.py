@@ -1,30 +1,25 @@
-##  python ./imgnet_train_eval.py --Wbits 8 --Abit 8 --lr 1e-5 --wd 1e-4  --pretrain --max_epochs 2  --if_train 0 --all_validate 1  --log_interval 50 --net mobilenet_m2 --optimizer CustomSGD
-## info: if all_validate == 0 , test images number == 5000, else test images number == 50000
+# final version
+# python ./train_cifar100.py --Wbits 32 --Abits 32 --max_epochs 1 --lr 0.01 --wd 5e-4
 import os
 import time
 import argparse
+import torch.optim as optim
 from datetime import datetime
-from PIL import ImageFile
-ImageFile.LOAD_TRUNCATED_IMAGES = True
 import torch
 import torchvision
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
-import psutil # monitor CPU utilization
+
 cudnn.benchmark = True
-import torch.optim as optim
 import torchvision
-import torchvision.datasets as datasets
+
 from tensorboardX import SummaryWriter
-from tqdm import tqdm
-#from nets.img100_VGG import *
-from nets.mobilenetv1 import *
-from nets.resnet50_official import *
-from nets.alexnet import *
-from nets.squeezenet1_0 import *
+
 from utils.preprocessing import *
-from torch.optim import Optimizer
+from nets.cifar100_shufflenet_v2 import *
 from torch.optim.optimizer import required
+np.set_printoptions(threshold=np.inf)
+np.set_printoptions(precision=8, suppress=True)
 
 # Training settings
 parser = argparse.ArgumentParser(description='SLFP train and finetune pytorch implementation')
@@ -35,45 +30,90 @@ parser.add_argument('--optimizer', type=str, default='SGD')  # options: SGD or C
 """ Each network corresponds to two models according to two training strategies.
     m1: learnable parameter = w
     m2: learnable parameter = w/kw. (set pretrain_dir as xxxx_m2.pth, get m2 pth by 'pre_xxxnet_weight()' function in autocode.py) """
-parser.add_argument('--net', type=str, default='mobilenet_m1')  # options: mobilenet_m1, mobilenet_m2
-
+parser.add_argument('--net', type=str, default='shufflenetv2_m1')  # options: shufflenetv2_m1, shufflenetv2_m2  
 parser.add_argument('--root_dir', type=str, default='./')
-parser.add_argument('--data_dir', type=str, default='/opt/datasets/imagenet-1k')
-parser.add_argument('--log_name', type=str, default='imgnet-1k')
-parser.add_argument('--pretrain', action='store_true', default=True)
+parser.add_argument('--data_dir', type=str, default='./data')
+parser.add_argument('--log_name', type=str, default='cifar-100')
 parser.add_argument('--if_train', type = int, default=0)
-parser.add_argument('--all_validate', type = int, default=0)
-#parser.add_argument('--pretrain_dir', type=str, default='./ckpt/mobnetv1_m2_base.pth')
+parser.add_argument('--if_save', type = int, default=0)
+parser.add_argument('--pretrain', action='store_true', default=True)  #default=True：use pretrained parameters  False：random seed
+#parser.add_argument('--pretrain_dir', type=str, default='./ckpt/cifar-100/shufflenetv2_fp32_biasF.t7')  #default='./ckpt/resnet20_baseline 
+### file 'checkpoint.t7' is damaged
+#parser.add_argument('--pretrain_dir', type=str, default='./ckpt/resnet20_baseline') 
 
-parser.add_argument('--Wbits', type=int, default=32)
-parser.add_argument('--Abits', type=int, default=32)
 
-parser.add_argument('--lr', type=float, default=0.00001)
-parser.add_argument('--wd', type=float, default=5e-4)
+parser.add_argument('--cifar', type=int, default=100)
+parser.add_argument('--Wbits', type=int, default=32)  #1
+parser.add_argument('--Abits', type=int, default=32)  #32
+ 
+parser.add_argument('--lr', type=float, default=0.001)  #0.1
+parser.add_argument('--wd', type=float, default=5e-4)  #1e-4
 
-parser.add_argument('--train_batch_size', type=int, default=32)#256
-parser.add_argument('--eval_batch_size', type=int, default=16)#100
-parser.add_argument('--max_epochs', type=int, default=2)
+parser.add_argument('--train_batch_size', type=int, default=100)
+parser.add_argument('--eval_batch_size', type=int, default=100)
+parser.add_argument('--max_epochs', type=int, default=1) #200
 
-parser.add_argument('--log_interval', type=int, default=500) #10
+parser.add_argument('--log_interval', type=int, default=100)
 parser.add_argument('--use_gpu', type=str, default='0')
-parser.add_argument('--num_workers', type=int, default=1) #20
+parser.add_argument('--num_workers', type=int, default=5)
 
 parser.add_argument('--cluster', action='store_true', default=False)
 
-cfg = parser.parse_args()
+cfg = parser.parse_args()  
 
 cfg.log_dir = os.path.join(cfg.root_dir, 'logs', cfg.log_name)
-cfg.ckpt_dir = os.path.join(cfg.root_dir, 'ckpt', cfg.log_name)
+cfg.ckpt_dir = os.path.join(cfg.root_dir, 'ckpt', cfg.log_name)   
 
 os.makedirs(cfg.log_dir, exist_ok=True)
 os.makedirs(cfg.ckpt_dir, exist_ok=True)
 
-if not cfg.cluster:
-  os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  
-  os.environ["CUDA_VISIBLE_DEVICES"] = cfg.use_gpu
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
+os.environ["CUDA_VISIBLE_DEVICES"] = cfg.use_gpu
 
-class CustomSGD(Optimizer):
+'''
+class CustomSGD(optim.Optimizer):   ## 第一次写的
+    def __init__(self, params, lr=0.01, momentum=0.9, weight_decay=0):
+        defaults = dict(lr=lr, momentum=momentum, weight_decay=weight_decay)
+        super(CustomSGD, self).__init__(params, defaults)
+
+    def step(self, closure=None):
+        """Performs a single optimization step.
+        Arguments:
+            closure (callable, optional): A closure that reevaluates the model
+                and returns the loss.
+        """
+        loss = None
+        if closure is not None:
+            loss = closure()
+ 
+        for group in self.param_groups:
+            weight_decay = group['weight_decay']
+            momentum = group['momentum']
+            dampening = group['dampening']
+            nesterov = group['nesterov']
+ 
+            for p in group['params']:
+                if p.grad is None:
+                    continue
+                d_p = p.grad.data
+                if weight_decay != 0:
+                    d_p.add_(weight_decay, p.data)
+                if momentum != 0:
+                    param_state = self.state[p]
+                    if 'momentum_buffer' not in param_state:
+                        buf = param_state['momentum_buffer'] = torch.clone(d_p).detach()
+                    else:
+                        buf = param_state['momentum_buffer']
+                        buf.mul_(momentum).add_(1 - dampening, d_p)
+                    if nesterov:
+                        d_p = d_p.add(momentum, buf)
+                    else:
+                        d_p = buf
+ 
+                p.data.add_(-group['lr']*d_p*p.data)
+        return loss
+'''
+class CustomSGD(optim.Optimizer):
     def __init__(self, params, lr=required, momentum=0, dampening=0,
                  weight_decay=0, nesterov=False):
         if lr is not required and lr < 0.0:
@@ -128,78 +168,86 @@ class CustomSGD(Optimizer):
                     else:
                         d_p = buf
  
-                p.data.add_(-group['lr']*d_p*p.data)
+                p.data.add_(-group['lr']*d_p)
         return loss
 
 def main():
-  # Data loading code
-  '''
-  print(torch.__version__)
-  print(torch.version.cuda)
-  print(torch.cuda.is_available())
-  print(torch.cuda.device_count())
-  '''
-  traindir = os.path.join(cfg.data_dir, 'train')
-  valdir = os.path.join(cfg.data_dir, 'val')
   
-  train_dataset = datasets.ImageFolder(traindir, imgnet_transform(is_training=True))
-  train_loader = torch.utils.data.DataLoader(train_dataset,
-                                             batch_size=cfg.train_batch_size,
-                                             shuffle=True,
-                                             num_workers=cfg.num_workers,
-                                             pin_memory=True)
-  
-  val_dataset = datasets.ImageFolder(valdir, imgnet_transform(is_training=False))
-  val_loader = torch.utils.data.DataLoader(val_dataset,
-                                           batch_size=cfg.eval_batch_size,
-                                           shuffle=False,
-                                           num_workers=cfg.num_workers,
-                                           pin_memory=True)
+  if cfg.cifar == 10:
+    print('training CIFAR-10 !')
+    dataset = torchvision.datasets.CIFAR10
+  elif cfg.cifar == 100:
+    print('training CIFAR-100 !')
+    dataset = torchvision.datasets.CIFAR100
+  else:
+    assert False, 'dataset unknown !'
 
-  # create model
+  print('==> Preparing data ..')
+  train_dataset = dataset(root=cfg.data_dir, train=True, download=True,
+                          transform=cifar_transform(is_training=True))
+  train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=cfg.train_batch_size, shuffle=True,
+                                             num_workers=cfg.num_workers)
+
+  eval_dataset = dataset(root=cfg.data_dir, train=False, download=True,
+                         transform=cifar_transform(is_training=False))
+  eval_loader = torch.utils.data.DataLoader(eval_dataset, batch_size=cfg.eval_batch_size, shuffle=False,
+                                            num_workers=cfg.num_workers)
+  
+
+  num_samples = len(train_loader) * cfg.train_batch_size
+  print("Total number of samples in train_loader:", num_samples)
+
   print("=> creating model", cfg.net, "..." )
-  if cfg.net == "mobilenet_m1":
-    model = MobileNetV1_Q(ch_in=3, wbit=cfg.Wbits, abit=cfg.Abits).cuda()
-    pretrain_dir = './ckpt/imgnet-1k/mobnetv1_m1_base.pth'
+  if cfg.net == "shufflenetv2_m1":
+    model = ShuffleNetV2(wbit=cfg.Wbits).cuda()
+    #pretrain_dir = './ckpt/cifar-100/shufflenetv2_fp32_biasF.t7'
+    pretrain_dir = './ckpt/cifar-100/shufflenetv2_cifar_fp_65.94.pth'
+    
   elif cfg.net == "mobilenet_m2":
-    model = MobileNetV1_m2(ch_in=3, wbit=cfg.Wbits, abit=cfg.Abits).cuda()
-    pretrain_dir = './ckpt/imgnet-1k/mobnetv1_m2_base.pth'
+    model = haimeixie(ch_in=3, wbit=cfg.Wbits, abit=cfg.Abits).cuda()
+    pretrain_dir = './ckpt/cifar-100/shufflenetv2_m2_base.pth'
 
-  #model = AlexNet(wbit = cfg.Wbits).cuda()
-  #model = SqueezeNet(wbit = cfg.Wbits).cuda()
-  #model = ResNet50(wbit = cfg.Wbits).cuda()
+  ################-----MODEL-----################
+  #model = MobileNetV3_Large(wbit=cfg.Wbits, abit=cfg.Abits).cuda()
+  #model = resnet20(wbits=cfg.Wbits, abits=cfg.Abits).cuda()
+  #model = VGG16(wbit=cfg.Wbits, abit=cfg.Abits).cuda()
+  #model = MobileNetV1_inference(ch_in=3, n_classes=100,wbit=cfg.Wbits, abit=cfg.Abits).cuda()
+  #model = MobileNetV1_scale_train(ch_in=3, n_classes=100,wbit=cfg.Wbits, abit=cfg.Abits).cuda()
+  model = ShuffleNetV2(wbit=cfg.Wbits).cuda()
+  ################---------------################
 
-  # optionally resume from a checkpoint
-  if cfg.pretrain:
-    model.load_state_dict(torch.load(pretrain_dir))
 
-  # define loss function (criterion) and optimizer
+  #### define optimizer #######
   if cfg.optimizer == "SGD" :
-    print("SGD")
+    print("optimizer => SGD")
     optimizer = torch.optim.SGD(model.parameters(), cfg.lr, momentum=0.9, weight_decay=cfg.wd)
   elif cfg.optimizer == "CustomSGD":
-    print("CustomSGD")
+    print("optimizer => CustomSGD")
     optimizer = CustomSGD(model.parameters(), cfg.lr, momentum=0.9, weight_decay=cfg.wd)
 
-  lr_schedu = optim.lr_scheduler.MultiStepLR(optimizer, [5,10], gamma=0.3)
-  criterion = nn.CrossEntropyLoss().cuda()
-
+  lr_schedu = optim.lr_scheduler.MultiStepLR(optimizer, [50], gamma=0.1)
+  criterion = torch.nn.CrossEntropyLoss().cuda()
   summary_writer = SummaryWriter(cfg.log_dir)
 
+  if cfg.pretrain:
+    model.load_state_dict(torch.load(pretrain_dir), False)
+
+  # Training
   def train(epoch):
-    # switch to train mode
+    print('\nEpoch: %d' % epoch)
     model.train()
 
     start_time = time.time()
-    for batch_idx, (inputs, targets) in enumerate(train_loader):
-      # compute output
-      output = model(inputs.cuda())
-      loss = criterion(output, targets.cuda())
 
-      # compute gradient and do SGD step
+    for batch_idx, (inputs, targets) in enumerate(train_loader):
+      outputs = model(inputs.cuda())
+      loss = criterion(outputs, targets.cuda())
+
       optimizer.zero_grad()
+      #custom_optimizer.zero_grad()
       loss.backward()
       optimizer.step()
+      #custom_optimizer.step()
 
       if batch_idx % cfg.log_interval == 0:
         step = len(train_loader) * epoch + batch_idx
@@ -212,57 +260,30 @@ def main():
         start_time = time.time()
         summary_writer.add_scalar('cls_loss', loss.item(), step)
         summary_writer.add_scalar('learning rate', optimizer.param_groups[0]['lr'], step)
-        #torch.save(model.state_dict(), os.path.join(cfg.ckpt_dir, 'mobilenet_slfp34_m2.pth'))
-        torch.save(model.state_dict(), os.path.join(cfg.ckpt_dir, 'mobilenet_slfp34_m2.pth'))
 
+  def test(epoch): 
+    # pass
+    model.eval()   #评估模式： 无dropout，bn参数使用训练时的统计信息
+    correct = 0
+    for batch_idx, (inputs, targets) in enumerate(eval_loader):
+      inputs, targets = inputs.cuda(), targets.cuda()
+      outputs = model(inputs)
+      _, predicted = torch.max(outputs.data, 1)
+      correct += predicted.eq(targets.data).cpu().sum().item()
 
-  def validate(epoch):
-    # switch to evaluate mode
-    model.eval()
-    top1 = 0
-    top5 = 0
-    if (cfg.all_validate == 1 ):
-      num_samples = len(val_dataset)
-    else:
-      num_samples = 5000
-   
-    #with tqdm(total=len(val_dataset)) as pbar:
-     # for i, (inputs, targets) in enumerate(val_loader):
-
-    with tqdm(total=num_samples) as pbar:
-      for i, (inputs, targets) in enumerate(val_loader):
-        if i * cfg.eval_batch_size >= num_samples:
-          break  # 停止迭代，已经测试了指定数量的样本
-
-        targets = targets.cuda()
-        input_var = inputs.cuda()
-
-        # compute output
-        output = model(input_var)
-
-        # measure accuracy and record loss
-        _, pred = output.data.topk(5, dim=1, largest=True, sorted=True)
-        pred = pred.t()
-        correct = pred.eq(targets.view(1, -1).expand_as(pred))
-
-        top1 += correct[:1].view(-1).float().sum(0, keepdim=True).item()
-        top5 += correct[:5].reshape(-1).float().sum(0, keepdim=True).item()
-        pbar.update(cfg.eval_batch_size)
-
-    top1 *= 100 / num_samples
-    top5 *= 100 / num_samples
+    acc = 100. * correct / len(eval_dataset)
     print('%s------------------------------------------------------ '
-          'Precision@1: %.2f%%  Precision@1: %.2f%%\n' % (datetime.now(), top1, top5))
+          'Precision@1: %.2f%% \n' % (datetime.now(), acc))
+    acc_data.append(acc)
 
-    summary_writer.add_scalar('Precision@1', top1, epoch)
-    summary_writer.add_scalar('Precision@5', top5, epoch)
-    
-    return top1, top5
+    summary_writer.add_scalar('Precision@1', acc, global_step=epoch)
   
   
 ####################  测试并计算每一层输入(输出)，权重的最大值(Ka，Kw) ################
+  '''
+  total_images = 1000  #共10000输入，只统计1000个，验证最大值缩放的普遍有效性
   
-  def test_with_layer_inputs_and_outputs(model, data_loader, total_images ): #共10000输入，只统计1000个，验证最大值缩放的普遍有效性
+  def test_with_layer_inputs_and_outputs(model, data_loader, total_images):
       model.eval()
       correct = 0
       count = 0
@@ -280,7 +301,6 @@ def main():
           outputs = model(inputs)
           # Get inputs and outputs for each layer
           current_layer_inputs = model.get_layer_inputs()
-          #print(current_layer_inputs)
           current_layer_outputs = model.get_layer_outputs()
           current_layer_weights = model.get_layer_weights()
           #print(inputimg.shape)
@@ -324,23 +344,20 @@ def main():
       for idx, weights_list in layer_weights.items():
           max_abs_output = torch.max(torch.abs(torch.cat(weights_list, dim=0)))
           max_abs_layer_weights[idx] = max_abs_output.item()
- 
+
       acc = 100. * correct / total_images
       print('%s------------------------------------------------------ '
             'Precision@1: %.2f%% \n' % (datetime.now(), acc))
 
       return acc, max_abs_layer_inputs, max_abs_layer_outputs, max_abs_layer_weights
-  
-  ###############----------------- --------############
-  '''
-  total_images = 1000
-  accuracy, max_abs_layer_inputs, max_abs_layer_outputs ,max_abs_layer_weights = test_with_layer_inputs_and_outputs(model, val_loader, total_images)
+
+  accuracy, max_abs_layer_inputs, max_abs_layer_outputs ,max_abs_layer_weights = test_with_layer_inputs_and_outputs(model, eval_loader, total_images)
  
   print(max_abs_layer_inputs)
   print(max_abs_layer_outputs)
   print(max_abs_layer_weights)
   
-  result_filename = "max_inout_squeezenet.txt"
+  result_filename = "max_inout_shufflenet.txt"
   with open(result_filename, "w") as f:
       for idx, max_abs_input in max_abs_layer_inputs.items():
           f.write(f"Layer {idx} Max Absolute Input:\n")
@@ -349,7 +366,7 @@ def main():
           f.write(f"Layer {idx} Max Absolute Output:\n")
           f.write(str(max_abs_output) + "\n\n")
 
-  result_filename_weight = "max_weight_squeezenet.txt"
+  result_filename_weight = "max_weight_shufflenet.txt"
   with open(result_filename_weight, "w") as f:
       for idx, max_abs_layer_weights in max_abs_layer_weights.items():
           f.write(f"Layer {idx} Max Absolute weight:\n")
@@ -359,14 +376,25 @@ def main():
   print(f"Results saved to {result_filename_weight}")
   '''
 
-  ##########------------------------------------############
-
-  for epoch in range(1, cfg.max_epochs):
+##########-------------------------------------------------------############
+   
+  acc_data = [] 
+  acc_max = 0
+  for epoch in range(cfg.max_epochs):
     lr_schedu.step(epoch)
     if (cfg.if_train == 1):
       train(epoch)
-    validate(epoch)
-    #torch.save(model.state_dict(), os.path.join(cfg.ckpt_dir, 'mobilenet_finetune.pth'))
+      print("saving....")
+    test(epoch)
+    print(acc_data)        
+    if (cfg.if_save == 1 and max(acc_data)> acc_max):
+      acc_max = max(acc_data)
+      torch.save(model.state_dict(), './ckpt/cifar-100/shufflenetv2_m1_selfSGDtmp.pth')
+      print("max acc :", acc_max)
+  
+  
+
+  summary_writer.close()
 
 
 if __name__ == '__main__':
