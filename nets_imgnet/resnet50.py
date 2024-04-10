@@ -6,8 +6,8 @@ from utils.sfp_quant import *
 from torchsummary import summary
 from torch.nn import functional as F
 from utils.sfp_quant import *
-from utils.sfp_ScaledConv_resnet50 import *
- 
+from utils.activation_func import *
+from utils.conv2d_func import *
  
 from typing import Type, Any, Callable, Union, List, Optional
  
@@ -16,139 +16,11 @@ import torch.nn as nn
 from torch import Tensor
  
 #from nets._internally_replaced_utils import load_state_dict_from_url
-from nets.util import _log_api_usage_once
+from nets_imgnet.util_resnet import _log_api_usage_once
  
-'''
-__all__ = [
-    "ResNet",
-    "resnet18",
-    "resnet34",
-    "resnet50",
-    "resnet101",
-    "resnet152",
-    "resnext50_32x4d",
-    "resnext101_32x8d",
-    "wide_resnet50_2",
-    "wide_resnet101_2",
-
-model_urls = {
-    "resnet18": "https://download.pytorch.org/models/resnet18-f37072fd.pth",
-    "resnet34": "https://download.pytorch.org/models/resnet34-b627a593.pth",
-    "resnet50": "https://download.pytorch.org/models/resnet50-0676ba61.pth",
-    "resnet101": "https://download.pytorch.org/models/resnet101-63fe2227.pth",
-    "resnet152": "https://download.pytorch.org/models/resnet152-394f9c45.pth",
-    "resnext50_32x4d": "https://download.pytorch.org/models/resnext50_32x4d-7cdf4587.pth",
-    "resnext101_32x8d": "https://download.pytorch.org/models/resnext101_32x8d-8ba56ff5.pth",
-    "wide_resnet50_2": "https://download.pytorch.org/models/wide_resnet50_2-95faca4d.pth",
-    "wide_resnet101_2": "https://download.pytorch.org/models/wide_resnet101_2-32ee1156.pth",
-}
-]
-'''
 __all__ = [
     "ResNet50",
 ]
- 
-
-
-
-'''
-def conv3x3(in_planes: int, out_planes: int, stride: int = 1, groups: int = 1, dilation: int = 1) -> nn.Conv2d:  #换conv_Q（bottleneck）
-    """3x3 convolution with padding"""
-    return Conv2d(
-        in_planes,
-        out_planes,
-        kernel_size=3,
-        Kw = Kw,
-        stride=stride,
-        padding=dilation,
-        groups=groups,
-        bias=False,
-        dilation=dilation,
-    )
- 
- 
-def conv1x1(in_planes: int, out_planes: int, stride: int = 1) -> nn.Conv2d:
-    """1x1 convolution"""
-    return Conv2d(in_planes, out_planes, kernel_size=1, Kw = Kw, stride=stride, bias=False)   #换conv_Q,bottleneck，和 _make_layer里，后三层stride=2时调用它
-
-
-def conv1x1_1(in_planes: int, out_planes: int, stride: int = 1) -> nn.Conv2d:
-    """1x1 convolution"""
-    return Conv2d(in_planes, out_planes, kernel_size=1, Kw = Kw[1],  stride=stride, bias=False) 
-
-
-def conv3x3_2(in_planes: int, out_planes: int, stride: int = 1, groups: int = 1, dilation: int = 1) -> nn.Conv2d:  #换conv_Q（bottleneck）
-    """3x3 convolution with padding"""
-    return Conv2d(
-        in_planes,
-        out_planes,
-        kernel_size=3,
-        Kw = Kw[2],
-        stride=stride,
-        padding=dilation,
-        groups=groups,
-        bias=False,
-        dilation=dilation,
-    )
-
-def conv1x1_3(in_planes: int, out_planes: int, stride: int = 1) -> nn.Conv2d:
-    """1x1 convolution"""
-    return Conv2d(in_planes, out_planes, kernel_size=1, Kw = Kw[3], stride=stride, bias=False) 
-
-
-def conv1x1_downsample(in_planes: int, out_planes: int, stride: int = 1) -> nn.Conv2d:  #downsample
-    """1x1 convolution"""
-    return Conv2d(in_planes, out_planes, kernel_size=1, Kw = Kw[0], stride=stride, bias=False) 
-'''
-'''
-class BasicBlock(nn.Module):
-    expansion: int = 1
- 
-    def __init__(
-        self,
-        inplanes: int,
-        planes: int,
-        stride: int = 1,
-        downsample: Optional[nn.Module] = None,
-        groups: int = 1,
-        base_width: int = 64,
-        dilation: int = 1,
-        norm_layer: Optional[Callable[..., nn.Module]] = None,
-    ) -> None:
-        super().__init__()
-        if norm_layer is None:
-            norm_layer = nn.BatchNorm2d
-        if groups != 1 or base_width != 64:
-            raise ValueError("BasicBlock only supports groups=1 and base_width=64")
-        if dilation > 1:
-            raise NotImplementedError("Dilation > 1 not supported in BasicBlock")
-        # Both self.conv1 and self.downsample layers downsample the input when stride != 1
-        self.conv1 = conv3x3(inplanes, planes, stride)
-        self.bn1 = norm_layer(planes)
-        self.relu = nn.ReLU(inplace=True)
-        self.conv2 = conv3x3(planes, planes)
-        self.bn2 = norm_layer(planes)
-        self.downsample = downsample
-        self.stride = stride
- 
-    def forward(self, x: Tensor) -> Tensor:
-        
-        out = self.conv1(x)
-        out = self.bn1(out)
-        out = self.relu(out)
- 
-        out = self.conv2(out)
-        out = self.bn2(out)
- 
-        if self.downsample is not None:
-            identity = self.downsample(x)
- 
-        out += identity
-        
-        out = self.relu(out)
- 
-        return out
-''' 
  
 class Bottleneck(nn.Module):
     # Bottleneck in torchvision places the stride for downsampling at 3x3 convolution(self.conv2)
@@ -161,7 +33,7 @@ class Bottleneck(nn.Module):
  
     def __init__(
         self,
-        wbit,
+        qbit,
         Kw,
         Ka,
         inplanes: int,
@@ -175,16 +47,16 @@ class Bottleneck(nn.Module):
     ) -> None:
         super().__init__()
 
-        Conv2d_1 = conv2d_Q_resnet50(w_bit = wbit, Kw = Kw[1], Ka = Ka[1])
-        Conv2d_2 = conv2d_Q_resnet50(w_bit = wbit, Kw = Kw[2], Ka = Ka[2])
-        Conv2d_3 = conv2d_Q_resnet50(w_bit = wbit, Kw = Kw[3], Ka = Ka[3])
+        Conv2d_1 = conv2d_Q(q_bit = qbit, Kw = Kw[1], Ka = Ka[1])
+        Conv2d_2 = conv2d_Q(q_bit = qbit, Kw = Kw[2], Ka = Ka[2])
+        Conv2d_3 = conv2d_Q(q_bit = qbit, Kw = Kw[3], Ka = Ka[3])
 
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
         width = int(planes * (base_width / 64.0)) * groups
         # Both self.conv2 and self.downsample layers downsample the input when stride != 1
         self.conv1 = Conv2d_1(in_channels = inplanes, out_channels = width, stride = 1, kernel_size = 1)   #conv1x1_1(inplanes, width)
-        
+    
         self.bn1 = norm_layer(width)
         self.conv2 = Conv2d_2(width, width, groups = 1, padding=dilation, dilation=dilation, stride = stride, kernel_size = 3)    #conv3x3_2(width, width, stride, groups, dilation)
 
@@ -192,7 +64,7 @@ class Bottleneck(nn.Module):
         self.conv3 = Conv2d_3(width, planes * self.expansion, stride = 1, kernel_size = 1) #conv1x1_3(width, planes * self.expansion)
         
         self.bn3 = norm_layer(planes * self.expansion)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU()
         self.downsample = downsample
         self.stride = stride
  
@@ -212,19 +84,17 @@ class Bottleneck(nn.Module):
  
         if self.downsample is not None:
             identity = self.downsample(x)
- 
         out += identity
-
         out = self.relu(out)
  
         return out
  
  
-class ResNet50(nn.Module):
+class ResNet50(nn.Module):  
     def __init__(
         self,
-        wbit, 
-        #block = Bottleneck(wbit = wbit, Kw = Kw, Ka = Ka) ,  #type[Union xxx] 表示可以接受块类型为basicblock或bottleneck :Type[Union[BasicBlock, Bottleneck]]
+        qbit, 
+        #block = Bottleneck(qbit = qbit, Kw = Kw, Ka = Ka) ,  #type[Union xxx] 表示可以接受块类型为basicblock或bottleneck :Type[Union[BasicBlock, Bottleneck]]
         layers = [3,4,6,3],
         num_classes: int = 1000,
         zero_init_residual: bool = False,  #零初始化每个残差分支的最后一个BN，使得剩余分支从0开始，每个剩余块表现得像一个单位
@@ -240,8 +110,8 @@ class ResNet50(nn.Module):
         weight = [0.7817208766937256, 0.987881064414978, 0.7266281247138977, 0.46786433458328247, 0.3936349153518677, 0.2617597281932831, 0.5201045870780945, 0.29462704062461853, 0.19206704199314117, 0.2855665683746338, 0.2751551568508148, 0.5662445425987244, 0.3531537353992462, 0.29927510023117065, 0.3916732370853424, 0.25216183066368103, 0.2997848093509674, 0.30379050970077515, 0.23830968141555786, 0.2555960714817047, 0.35215842723846436, 0.28143224120140076, 0.2209654152393341, 0.2956201732158661, 0.34601572155952454, 0.3425379693508148, 0.2007666528224945, 0.32124170660972595, 0.29417240619659424, 0.2634257674217224, 0.4968879222869873, 0.2714691460132599, 0.21002456545829773, 0.3537616431713104, 0.2390037477016449, 0.27921295166015625, 0.3126426041126251, 0.2721982002258301, 0.19188867509365082, 0.316133052110672, 0.39949774742126465, 0.2235630750656128, 0.32883593440055847, 0.6412832736968994, 0.3415152430534363, 0.3992723524570465, 0.3546474874019623, 0.700333833694458, 0.22574764490127563, 0.24268335103988647, 0.4540838599205017, 0.14155906438827515, 0.279774934053421, 0.7371371984481812]
         Kw = np.array(weight)/15.5
         
-        Conv2d_first = conv2d_Q_resnet50(w_bit = wbit, Kw = Kw[0], Ka = Ka[0])
-        Linear = linear_Q_resnet50(w_bit = wbit, Kw = Kw[53], Ka = Ka[53])
+        Conv2d_first = conv2d_Q(q_bit = qbit, Kw = Kw[0], Ka = Ka[0])
+        Linear = linear_Q(q_bit = qbit, Kw = Kw[53], Ka = Ka[53])
 
         #_log_api_usage_once(self)
         if norm_layer is None:
@@ -260,7 +130,7 @@ class ResNet50(nn.Module):
                 f"or a 3-element tuple, got {replace_stride_with_dilation}"
             )
         
-        self.wbit = wbit
+        self.qbit = qbit
         self.Kw = Kw
         self.Ka = Ka
         self.groups = groups
@@ -307,7 +177,7 @@ class ResNet50(nn.Module):
         downsample = None
         previous_dilation = self.dilation
 
-        conv1x1_downsample = conv2d_Q_resnet50(w_bit = self.wbit, Kw = Kw[0], Ka = Ka[0])
+        conv1x1_downsample = conv2d_Q(q_bit = self.qbit, Kw = Kw[0], Ka = Ka[0])
 
         if dilate:
             self.dilation *= stride
@@ -321,14 +191,14 @@ class ResNet50(nn.Module):
         layers = []
         layers.append(
             Bottleneck(
-                self.wbit, Kw, Ka, self.inplanes, planes, stride, downsample, self.groups, self.base_width, previous_dilation, norm_layer
+                self.qbit, Kw, Ka, self.inplanes, planes, stride, downsample, self.groups, self.base_width, previous_dilation, norm_layer
             )
         )
         self.inplanes = planes * Bottleneck.expansion
         for counter in range(1, blocks):
             layers.append(
                 Bottleneck(
-                    self.wbit,
+                    self.qbit,
                     Kw[3*counter:],
                     Ka[3*counter:],
                     self.inplanes,
@@ -489,17 +359,7 @@ class ResNet50(nn.Module):
 
 if __name__=='__main__':
     # model check
-    
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = ResNet50(wbit = 32).to(device)
-    #model = MobileNetV1(ch_in=3, n_classes=10).to(device)
-    #print(model)
-    #summary(model, input_size=(3, 224, 224), device='cuda')
-
-    #model = torch.load("../ckpt/resnet-50.pth", map_location='cpu')  # 注意指定map_location以确保在CPU上加载
-    # 遍历模型的每一层并打印详细信息
-    #for key in model:
-    #    print(key)
-
+    model = ResNet50(qbit = 32).to(device)
     print(model)
 

@@ -3,5 +3,13 @@ core
 logs/
 data/
 param_saved_txt/
-nets/__pycache__/
+parameter/
+training_txt/
+nets_cifar/__pycache__/
+nets_imgnet/__pycache__/
 utils/__pycache__/
+__pycache__/
+unused/
+autocode.py
+tools.py
+bash_train.sh

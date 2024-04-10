@@ -4,7 +4,8 @@ import torch.utils.model_zoo as model_zoo
 import sys
 sys.path.append('..')
 from utils.sfp_quant import *
-from utils.sfp_conv_alexnet import *
+from utils.activation_func import *
+from utils.conv2d_func import *
 
 
 __all__ = ['AlexNet', 'alexnet']
@@ -14,11 +15,9 @@ model_urls = {
     'alexnet': 'https://download.pytorch.org/models/alexnet-owt-4df8aa71.pth',
 }
 
-
 class AlexNet(nn.Module):
 
-
-    def __init__(self, wbit, num_classes=1000):
+    def __init__(self, qbit, num_classes=1000):
         super(AlexNet, self).__init__()
 
         ka = [2.640000104904175,
@@ -41,8 +40,8 @@ class AlexNet(nn.Module):
         0.21982255578041077]
         Kw = np.array(kw)/15.5
 
-        Conv2d = conv2d_Q_alexnet(w_bit=wbit, Kw = Kw, Ka = Ka)
-        Linear = linear_Q_alexnet(w_bit=wbit, Kw = Kw, Ka = Ka)
+        Conv2d = conv2d_Q_bias(q_bit=qbit, Kw = Kw, Ka = Ka)
+        Linear = linear_Q(q_bit=qbit, Kw = Kw, Ka = Ka)
 
         self.features = nn.Sequential(
             Conv2d(3, 64, 11, Kw[0], Ka[0], stride=4, padding=2),
@@ -125,16 +124,6 @@ def alexnet(pretrained=False, model_root=None, **kwargs):
 
 if __name__=='__main__':
     # model check
-    
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = alexnet().to(device)
-    #model = MobileNetV1(ch_in=3, n_classes=10).to(device)
-    #print(model)
-    #summary(model, input_size=(3, 224, 224), device='cuda')
-
-    #model = torch.load("../ckpt/resnet-50.pth", map_location='cpu')  # 注意指定map_location以确保在CPU上加载
-    # 遍历模型的每一层并打印详细信息
-    #for key in model:
-    #    print(key)
-
     print(model)

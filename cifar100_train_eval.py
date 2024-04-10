@@ -1,5 +1,4 @@
 # final version
-# python ./train_cifar100.py --Wbits 32 --Abits 32 --max_epochs 1 --lr 0.01 --wd 5e-4
 import os
 import time
 import argparse
@@ -7,17 +6,18 @@ import torch.optim as optim
 from datetime import datetime
 import torch
 import torchvision
-import torch.optim as optim
 import torch.backends.cudnn as cudnn
+# import globals
+from tensorboardX import SummaryWriter
+from torch.optim.optimizer import required
+from utils.sfp_quant import *
+from utils.optimizer import *
+from utils.preprocessing import *
+from nets_cifar.shufflenet_v2 import *
+from nets_cifar.mobilenetv1 import *
+from nets_cifar.vgg16 import *
 
 cudnn.benchmark = True
-import torchvision
-
-from tensorboardX import SummaryWriter
-
-from utils.preprocessing import *
-from nets.cifar100_shufflenet_v2 import *
-from torch.optim.optimizer import required
 np.set_printoptions(threshold=np.inf)
 np.set_printoptions(precision=8, suppress=True)
 
@@ -30,27 +30,25 @@ parser.add_argument('--optimizer', type=str, default='SGD')  # options: SGD or C
 """ Each network corresponds to two models according to two training strategies.
     m1: learnable parameter = w
     m2: learnable parameter = w/kw. (set pretrain_dir as xxxx_m2.pth, get m2 pth by 'pre_xxxnet_weight()' function in autocode.py) """
-parser.add_argument('--net', type=str, default='shufflenetv2_m1')  # options: shufflenetv2_m1, shufflenetv2_m2  
+parser.add_argument('--net', type=str, default='mobilenet')  # options: shufflenetv2_m1, shufflenetv2_m2  
 parser.add_argument('--root_dir', type=str, default='./')
 parser.add_argument('--data_dir', type=str, default='./data')
 parser.add_argument('--log_name', type=str, default='cifar-100')
+
 parser.add_argument('--if_train', type = int, default=0)
 parser.add_argument('--if_save', type = int, default=0)
-parser.add_argument('--pretrain', action='store_true', default=True)  #default=True：use pretrained parameters  False：random seed
-#parser.add_argument('--pretrain_dir', type=str, default='./ckpt/cifar-100/shufflenetv2_fp32_biasF.t7')  #default='./ckpt/resnet20_baseline 
-### file 'checkpoint.t7' is damaged
-#parser.add_argument('--pretrain_dir', type=str, default='./ckpt/resnet20_baseline') 
-
+parser.add_argument('--pre_reference', action='store_true', default=False)
+parser.add_argument('--pretrain', action='store_true', default=False)  #default=True：use pretrained parameters  False：random seed
 
 parser.add_argument('--cifar', type=int, default=100)
-parser.add_argument('--Wbits', type=int, default=32)  #1
-parser.add_argument('--Abits', type=int, default=32)  #32
- 
-parser.add_argument('--lr', type=float, default=0.001)  #0.1
+parser.add_argument('--Qbits', type=int, default=32)  #1
+parser.add_argument('--lr', type=float, default=0.0001)  #0.1
 parser.add_argument('--wd', type=float, default=5e-4)  #1e-4
 
-parser.add_argument('--train_batch_size', type=int, default=100)
-parser.add_argument('--eval_batch_size', type=int, default=100)
+#parser.add_argument('--num', type=int, default=0)
+
+parser.add_argument('--train_batch_size', type=int, default=256)
+parser.add_argument('--eval_batch_size', type=int, default=128)
 parser.add_argument('--max_epochs', type=int, default=1) #200
 
 parser.add_argument('--log_interval', type=int, default=100)
@@ -69,110 +67,9 @@ os.makedirs(cfg.ckpt_dir, exist_ok=True)
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
 os.environ["CUDA_VISIBLE_DEVICES"] = cfg.use_gpu
-
-'''
-class CustomSGD(optim.Optimizer):   ## 第一次写的
-    def __init__(self, params, lr=0.01, momentum=0.9, weight_decay=0):
-        defaults = dict(lr=lr, momentum=momentum, weight_decay=weight_decay)
-        super(CustomSGD, self).__init__(params, defaults)
-
-    def step(self, closure=None):
-        """Performs a single optimization step.
-        Arguments:
-            closure (callable, optional): A closure that reevaluates the model
-                and returns the loss.
-        """
-        loss = None
-        if closure is not None:
-            loss = closure()
- 
-        for group in self.param_groups:
-            weight_decay = group['weight_decay']
-            momentum = group['momentum']
-            dampening = group['dampening']
-            nesterov = group['nesterov']
- 
-            for p in group['params']:
-                if p.grad is None:
-                    continue
-                d_p = p.grad.data
-                if weight_decay != 0:
-                    d_p.add_(weight_decay, p.data)
-                if momentum != 0:
-                    param_state = self.state[p]
-                    if 'momentum_buffer' not in param_state:
-                        buf = param_state['momentum_buffer'] = torch.clone(d_p).detach()
-                    else:
-                        buf = param_state['momentum_buffer']
-                        buf.mul_(momentum).add_(1 - dampening, d_p)
-                    if nesterov:
-                        d_p = d_p.add(momentum, buf)
-                    else:
-                        d_p = buf
- 
-                p.data.add_(-group['lr']*d_p*p.data)
-        return loss
-'''
-class CustomSGD(optim.Optimizer):
-    def __init__(self, params, lr=required, momentum=0, dampening=0,
-                 weight_decay=0, nesterov=False):
-        if lr is not required and lr < 0.0:
-            raise ValueError("Invalid learning rate: {}".format(lr))
-        if momentum < 0.0:
-            raise ValueError("Invalid momentum value: {}".format(momentum))
-        if weight_decay < 0.0:
-            raise ValueError("Invalid weight_decay value: {}".format(weight_decay))
- 
-        defaults = dict(lr=lr, momentum=momentum, dampening=dampening,
-                        weight_decay=weight_decay, nesterov=nesterov)
-        if nesterov and (momentum <= 0 or dampening != 0):
-            raise ValueError("Nesterov momentum requires a momentum and zero dampening")
-        super().__init__(params, defaults)
- 
-    def __setstate__(self, state):
-        super().__setstate__(state)
-        for group in self.param_groups:
-            group.setdefault('nesterov', False)
- 
-    def step(self, closure=None):
-        """Performs a single optimization step.
-        Arguments:
-            closure (callable, optional): A closure that reevaluates the model
-                and returns the loss.
-        """
-        loss = None
-        if closure is not None:
-            loss = closure()
- 
-        for group in self.param_groups:
-            weight_decay = group['weight_decay']
-            momentum = group['momentum']
-            dampening = group['dampening']
-            nesterov = group['nesterov']
- 
-            for p in group['params']:
-                if p.grad is None:
-                    continue
-                d_p = p.grad.data
-                if weight_decay != 0:
-                    d_p.add_(weight_decay, p.data)
-                if momentum != 0:
-                    param_state = self.state[p]
-                    if 'momentum_buffer' not in param_state:
-                        buf = param_state['momentum_buffer'] = torch.clone(d_p).detach()
-                    else:
-                        buf = param_state['momentum_buffer']
-                        buf.mul_(momentum).add_(1 - dampening, d_p)
-                    if nesterov:
-                        d_p = d_p.add(momentum, buf)
-                    else:
-                        d_p = buf
- 
-                p.data.add_(-group['lr']*d_p)
-        return loss
-
+    
 def main():
-  
+
   if cfg.cifar == 10:
     print('training CIFAR-10 !')
     dataset = torchvision.datasets.CIFAR10
@@ -197,35 +94,60 @@ def main():
   num_samples = len(train_loader) * cfg.train_batch_size
   print("Total number of samples in train_loader:", num_samples)
 
+  # model
   print("=> creating model", cfg.net, "..." )
-  if cfg.net == "shufflenetv2_m1":
-    model = ShuffleNetV2(wbit=cfg.Wbits).cuda()
-    #pretrain_dir = './ckpt/cifar-100/shufflenetv2_fp32_biasF.t7'
-    pretrain_dir = './ckpt/cifar-100/shufflenetv2_cifar_fp_65.94.pth'
+  if cfg.net == "shufflenetv2_swish":
+    model = ShuffleNetV2(qbit=cfg.Qbits).cuda()
+    pretrain_dir = './ckpt/cifar-100/shuffle-Swish-71.18.pth'
+  
+  if cfg.net == "shufflenetv2":
+    model = ShuffleNetV2(qbit=cfg.Qbits).cuda()
+    pretrain_dir = './ckpt/cifar-100/shuffle-relu-69.39.pth'
     
-  elif cfg.net == "mobilenet_m2":
-    model = haimeixie(ch_in=3, wbit=cfg.Wbits, abit=cfg.Abits).cuda()
-    pretrain_dir = './ckpt/cifar-100/shufflenetv2_m2_base.pth'
+  elif cfg.net == "mobilenet":
+    model = MobileNetV1_Q(ch_in=3, qbit=cfg.Qbits).cuda()
+    pretrain_dir = './ckpt/cifar-100/mobnet-fp32-newmodel-60.64.pth'
 
+  elif cfg.net == "mobilenet_swish":
+    model = MobileNetV1_swish(ch_in=3, qbit=cfg.Qbits).cuda()
+    pretrain_dir = './ckpt/cifar-100/mobnet-swish-61.8.pth'
+
+  elif cfg.net == "vgg16":
+    model = VGG16_Q(qbit=cfg.Qbits).cuda()
+    pretrain_dir = './ckpt/cifar-100/vgg_relu_fp32_72.40.pth'
+
+  elif cfg.net == "vgg16_gelu":
+    model = VGG16_gelu(qbit=cfg.Qbits).cuda()
+    pretrain_dir = './ckpt/cifar-100/vgg16_gelu73.39.pth'
+  
   ################-----MODEL-----################
-  #model = MobileNetV3_Large(wbit=cfg.Wbits, abit=cfg.Abits).cuda()
-  #model = resnet20(wbits=cfg.Wbits, abits=cfg.Abits).cuda()
-  #model = VGG16(wbit=cfg.Wbits, abit=cfg.Abits).cuda()
-  #model = MobileNetV1_inference(ch_in=3, n_classes=100,wbit=cfg.Wbits, abit=cfg.Abits).cuda()
-  #model = MobileNetV1_scale_train(ch_in=3, n_classes=100,wbit=cfg.Wbits, abit=cfg.Abits).cuda()
-  model = ShuffleNetV2(wbit=cfg.Wbits).cuda()
+  #model = MobileNetV3_Large(qbit=cfg.Qbits, abit=cfg.Abits).cuda()
+  #model = resnet20(Qbits=cfg.Qbits, abits=cfg.Abits).cuda()
+  #model = VGG16(qbit=cfg.Qbits, abit=cfg.Abits).cuda()
+  #model = MobileNetV1_inference(ch_in=3, n_classes=100,qbit=cfg.Qbits, abit=cfg.Abits).cuda()
+  #model = MobileNetV1_scale_train(ch_in=3, n_classes=100,qbit=cfg.Qbits, abit=cfg.Abits).cuda()
+  #model = ShuffleNetV2(qbit=cfg.Qbits).cuda()
   ################---------------################
 
-
-  #### define optimizer #######
-  if cfg.optimizer == "SGD" :
-    print("optimizer => SGD")
-    optimizer = torch.optim.SGD(model.parameters(), cfg.lr, momentum=0.9, weight_decay=cfg.wd)
+  # optimizer
+  if cfg.optimizer == "SSGD" :
+    print("optimizer => SSGD")
+    optimizer = SSGD(model.parameters(), qbit = cfg.Qbits, lr = cfg.lr,  momentum=0.9, weight_decay=cfg.wd)
+  elif cfg.optimizer == "DSGD":
+    print("optimizer => DSGD")
+    optimizer = DSGD(model.parameters(), qbit = cfg.Qbits, lr = cfg.lr, momentum=0.9, weight_decay=cfg.wd)
   elif cfg.optimizer == "CustomSGD":
     print("optimizer => CustomSGD")
     optimizer = CustomSGD(model.parameters(), cfg.lr, momentum=0.9, weight_decay=cfg.wd)
+  elif cfg.optimizer == "Adam":
+    optimizer = torch.optim.Adam(model.parameters(), cfg.lr)
+  elif cfg.optimizer == "RMSprop":
+    optimizer = torch.optim.RMSprop(model.parameters(), cfg.lr)
+  elif cfg.optimizer == "SGD":
+    print("optimizer => SGD")
+    optimizer = torch.optim.SGD(model.parameters(), cfg.lr, momentum=0.9, weight_decay=cfg.wd)
 
-  lr_schedu = optim.lr_scheduler.MultiStepLR(optimizer, [50], gamma=0.1)
+  lr_schedu = optim.lr_scheduler.MultiStepLR(optimizer, [75,85,100], gamma=0.1)
   criterion = torch.nn.CrossEntropyLoss().cuda()
   summary_writer = SummaryWriter(cfg.log_dir)
 
@@ -234,9 +156,14 @@ def main():
 
   # Training
   def train(epoch):
-    print('\nEpoch: %d' % epoch)
-    model.train()
 
+    # globals.total_zeros = 0
+    # globals.total_twos = 0
+    # globals.total_threes = 0
+
+    print('\nEpoch: %d' % epoch)
+
+    model.train()
     start_time = time.time()
 
     for batch_idx, (inputs, targets) in enumerate(train_loader):
@@ -244,10 +171,8 @@ def main():
       loss = criterion(outputs, targets.cuda())
 
       optimizer.zero_grad()
-      #custom_optimizer.zero_grad()
       loss.backward()
       optimizer.step()
-      #custom_optimizer.step()
 
       if batch_idx % cfg.log_interval == 0:
         step = len(train_loader) * epoch + batch_idx
@@ -260,10 +185,13 @@ def main():
         start_time = time.time()
         summary_writer.add_scalar('cls_loss', loss.item(), step)
         summary_writer.add_scalar('learning rate', optimizer.param_groups[0]['lr'], step)
+    # print(f"SGD updated: {globals.total_zeros}")
+    # print(f"SGD not updated: {globals.total_twos}")
+    # print(f"SSGD updated: {globals.total_threes}")
 
   def test(epoch): 
     # pass
-    model.eval()   #评估模式： 无dropout，bn参数使用训练时的统计信息
+    model.eval() 
     correct = 0
     for batch_idx, (inputs, targets) in enumerate(eval_loader):
       inputs, targets = inputs.cuda(), targets.cuda()
@@ -277,13 +205,8 @@ def main():
     acc_data.append(acc)
 
     summary_writer.add_scalar('Precision@1', acc, global_step=epoch)
-  
-  
-####################  测试并计算每一层输入(输出)，权重的最大值(Ka，Kw) ################
-  '''
-  total_images = 1000  #共10000输入，只统计1000个，验证最大值缩放的普遍有效性
-  
-  def test_with_layer_inputs_and_outputs(model, data_loader, total_images):
+
+  def test_with_layer_inputs_and_outputs(model, data_loader, total_images): # Ka, Kw
       model.eval()
       correct = 0
       count = 0
@@ -351,33 +274,30 @@ def main():
 
       return acc, max_abs_layer_inputs, max_abs_layer_outputs, max_abs_layer_weights
 
-  accuracy, max_abs_layer_inputs, max_abs_layer_outputs ,max_abs_layer_weights = test_with_layer_inputs_and_outputs(model, eval_loader, total_images)
- 
-  print(max_abs_layer_inputs)
-  print(max_abs_layer_outputs)
-  print(max_abs_layer_weights)
+  if cfg.pre_reference:
+    total_images = 1000  # only 1000 of 10000 imgs are used, to verify the universal effectiveness of the maximum value scaling
+    accuracy, max_abs_layer_inputs, max_abs_layer_outputs ,max_abs_layer_weights = test_with_layer_inputs_and_outputs(model, eval_loader, total_images)
+    print(max_abs_layer_inputs)
+    print(max_abs_layer_outputs)
+    print(max_abs_layer_weights)
+    
+    result_filename = f"max_inout_{cfg.net}.txt"
+    with open(result_filename, "w") as f:
+        for idx, max_abs_input in max_abs_layer_inputs.items():
+            f.write(f"Layer {idx} Max Absolute Input:\n")
+            f.write(str(max_abs_input) + "\n\n")
+        for idx, max_abs_output in max_abs_layer_outputs.items():
+            f.write(f"Layer {idx} Max Absolute Output:\n")
+            f.write(str(max_abs_output) + "\n\n")
+
+    result_filename_weight = f"max_weight_{cfg.net}.txt"
+    with open(result_filename_weight, "w") as f:
+        for idx, max_abs_layer_weights in max_abs_layer_weights.items():
+            f.write(f"Layer {idx} Max Absolute weight:\n")
+            f.write(str(max_abs_layer_weights) + "\n\n")
+    print(f"Results saved to {result_filename_weight}")
   
-  result_filename = "max_inout_shufflenet.txt"
-  with open(result_filename, "w") as f:
-      for idx, max_abs_input in max_abs_layer_inputs.items():
-          f.write(f"Layer {idx} Max Absolute Input:\n")
-          f.write(str(max_abs_input) + "\n\n")
-      for idx, max_abs_output in max_abs_layer_outputs.items():
-          f.write(f"Layer {idx} Max Absolute Output:\n")
-          f.write(str(max_abs_output) + "\n\n")
-
-  result_filename_weight = "max_weight_shufflenet.txt"
-  with open(result_filename_weight, "w") as f:
-      for idx, max_abs_layer_weights in max_abs_layer_weights.items():
-          f.write(f"Layer {idx} Max Absolute weight:\n")
-          f.write(str(max_abs_layer_weights) + "\n\n")
-  
-
-  print(f"Results saved to {result_filename_weight}")
-  '''
-
-##########-------------------------------------------------------############
-   
+  # main loop
   acc_data = [] 
   acc_max = 0
   for epoch in range(cfg.max_epochs):
@@ -389,13 +309,9 @@ def main():
     print(acc_data)        
     if (cfg.if_save == 1 and max(acc_data)> acc_max):
       acc_max = max(acc_data)
-      torch.save(model.state_dict(), './ckpt/cifar-100/shufflenetv2_m1_selfSGDtmp.pth')
+      torch.save(model.state_dict(), f'./ckpt/cifar-100/{cfg.net}{cfg.num}_tmp.pth')
       print("max acc :", acc_max)
-  
-  
-
   summary_writer.close()
-
 
 if __name__ == '__main__':
   main()
