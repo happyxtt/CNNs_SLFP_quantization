@@ -7,8 +7,8 @@ parameter/
 training_txt/
 nets_cifar/__pycache__/
 nets_imgnet/__pycache__/
-utils/__pycache__/
 __pycache__/
+utils/__pycache__/
 unused/
 autocode.py
 tools.py
