@@ -4,188 +4,179 @@ import torch.nn.functional as F
 import numpy as np
 #np.set_printoptions(threshold=np.inf)
 
-def uniform_quantize(k):  #k-bit定点量化tensor
-  class qfn(torch.autograd.Function):  # 和继承nn.Module比，autograd.Function还能自定义backward
-
-    @staticmethod             
-    def forward(ctx, input):           # 用ctx而不是self。保存上下文，forward里的变量backward能继续用
-      
+def quantize_weight(k):  
+  class qfn(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input): 
         if k == 32:
             out = input
-        #elif k == 1:
-        # out = torch.sign(input)
-        elif k == 8:
-            #out = input.clone()
-            '''
-            n = float(2 ** k - 1)
-            out = torch.round(input / n) * n
-            '''
-            '''
-            N = 8  #sfp<3,n>
-            sign = torch.sign(input)
-            input = torch.abs(input)
-            input[input <= 0.0625] = 1e-10
-            input[(input >= 0.0625) & (input < 0.125)] = 0.125
-            input = torch.clamp(input, 0, 15)
-            scaling_factor = pow(2, torch.floor(torch.log2(input)))
-            out = torch.mul(sign, torch.mul(torch.round(torch.div(input, scaling_factor)*N)/N , scaling_factor))
-            '''
 
-            
-            N = 16  # SLFP<3,n>
+        elif k == 7:
+            #out = input.clone()
+            N = 8   #SFP<3,3>
             sign = torch.sign(input)
-            input = torch.abs(input)
-            input[input <= 0.0625] = 1e-10
-            input[(input >= 0.0625) & (input < 0.125)] = 0.125
-            input = torch.clamp(input, 0, 15.3216)   #14.672   15.3216
-            scaling_factor = pow(2, torch.floor(torch.log2(input)))
-            out = pow(2,torch.floor(torch.log2(input)) + torch.round(torch.log2(torch.div(input,scaling_factor))*N)/N)
-            out = torch.mul(sign, out)     
-            
-        
-            '''
-            #####  sfp<4,3>
-            
-            N = 8   #8
+            input_abs = torch.abs(input)
+            output_abs = torch.clone(input_abs) #init output_abs
+            # normal quantization
+            exponent = torch.floor(torch.log2(input_abs))
+            mantissa = input_abs / pow(2, exponent)
+            mantissa_q = torch.round(mantissa * N) / N
+            output_abs = torch.mul(mantissa_q, pow(2, exponent))
+            # subnormal
+            output_abs[input_abs < 0.0625] = 1e-10
+            output_abs[(input_abs >= 0.0625) & (input_abs < 0.125)] = 0.125
+            # large number
+            output_abs[input_abs >= 15] = 15
+            out = torch.mul(sign, output_abs)
+
+        elif k == 8:
+            N = 16  # SLFP<3,4>
             sign = torch.sign(input)
-            input = torch.clamp(torch.abs(input), 0.00390625, 240)  #240    
-            scaling_factor = pow(2, torch.floor(torch.log2(input)))
-            out = torch.mul(sign, torch.mul(torch.round(torch.div(input, scaling_factor)*N)/N , scaling_factor))
-            '''
-          
-            '''
-            ####  slfp<4,3>
-            N = 8
-            sign = torch.sign(input)                            
-            input = torch.clamp(torch.abs(input), 0.00390625, 234.753) #234.753, 245.14644
-            scaling_factor = pow(2, torch.floor(torch.log2(input)))
-            out = pow(2,torch.floor(torch.log2(input)) + torch.round(torch.log2(torch.div(input,scaling_factor))*N)/N)
-            out = torch.mul(sign, out)
-            '''
+            input_abs = torch.abs(input)
+            output_abs = torch.clone(input_abs) #init output_abs
+            # normal quantization
+            exponent = torch.floor(torch.log2(input_abs))
+            mantissa = input_abs / pow(2, exponent)
+            mantissa_log = torch.round(torch.log2(mantissa)*N)/N
+            output_abs = pow(2, (exponent + mantissa_log))
+            # subnormal
+            output_abs[input_abs < 0.0625] = 1e-10 # to avoid inf
+            output_abs[(input_abs >= 0.0625) & (input_abs < 0.125)] = 0.125
+            # large number
+            output_abs[input_abs > 15.32165] = 15.32165
+            out = torch.mul(sign, output_abs)        
         return out
 
     @staticmethod
-    def backward(ctx, grad_output):     # STE,do nothing in backward (quantized)
-      grad_input = grad_output.clone()  #.clone: 使拷贝的类型和等号左边一致（不然是和grad_output一致）
+    def backward(ctx, grad_output):     # STE, do nothing in backward
+      grad_input = grad_output.clone() 
       return grad_input
-
   return qfn().apply
 
+def quantize_act(k): 
+  class qfn(torch.autograd.Function): 
+    @staticmethod             
+    def forward(ctx, input):
+        if k == 32:
+            out = input
 
-class weight_quantize_fn(nn.Module):    #量化权重
-  def __init__(self, w_bit):
-    super(weight_quantize_fn, self).__init__()
-    assert w_bit <= 8 or w_bit == 32
-    self.w_bit = w_bit                  # 传给量化模块 
-    self.uniform_q = uniform_quantize(k=w_bit) # uniform_q()：执行量化
+        elif k == 7:  # SFP<3,3>
+            N = 8 
+            sign = torch.sign(input)
+            input_abs = torch.abs(input)
+            output_abs = torch.clone(input_abs) #init output_abs
+            # normal quantization
+            exponent = torch.floor(torch.log2(input_abs))
+            mantissa = input_abs / pow(2, exponent)
+            mantissa_q = torch.round(mantissa * N) / N
+            output_abs = torch.mul(mantissa_q, pow(2, exponent))
+            # subnormal
+            output_abs[input_abs < 0.0625] = 1e-10
+            output_abs[(input_abs >= 0.0625) & (input_abs < 0.125)] = 0.125
+            # large number
+            output_abs[input_abs >= 15] = 15
+            out = torch.mul(sign, output_abs)
+
+        elif k == 8: # SLFP<3,4>
+            N = 16   # SFP<3,4>
+            sign = torch.sign(input)
+            input_abs = torch.abs(input)
+            output_abs = torch.clone(input_abs) #init output_abs
+            # normal quantization
+            exponent = torch.floor(torch.log2(input_abs))
+            mantissa = input_abs / pow(2, exponent)
+            mantissa_q = torch.round(mantissa * N) / N
+            mantissa_log = torch.round(torch.log2(mantissa_q)*N)/N  # SLFP<3,4>, log converter
+            output_abs = pow(2, (exponent + mantissa_log))
+            # subnormal
+            output_abs[input_abs < 0.0625] = 1e-10
+            output_abs[(input_abs >= 0.0625) & (input_abs < 0.125)] = 0.125
+            # large number
+            output_abs[input_abs > 15.32165] = 15.32165 # 0 111 1111
+            out = torch.mul(sign, output_abs)
+        return out
+
+    @staticmethod
+    def backward(ctx, grad_output): 
+      grad_input = grad_output.clone()
+      return grad_input
+  return qfn().apply
+
+def quantize_layerout(k):  
+  class qfn(torch.autograd.Function): 
+    @staticmethod
+    def forward(ctx, input): 
+        if k == 32:
+            out = input
+        elif k <= 8:
+            N = 16       #SFP<4,4>
+            sign = torch.sign(input)
+            input_abs = torch.abs(input)
+            output_abs = torch.clone(input_abs) #init output_abs
+            # normal quantization
+            exponent = torch.floor(torch.log2(input_abs))
+            mantissa = input_abs / pow(2, exponent)
+            mantissa_q = torch.round(mantissa * N) / N
+            output_abs = torch.mul(mantissa_q, pow(2, exponent))
+            # subnormal
+            output_abs[input_abs < 2^(-8)] = 1e-10
+            output_abs[(input_abs >= 2^(-8)) & (input_abs < 2^(-7))] = 2^(-7)
+            # large number
+            output_abs[input_abs >= 248] = 248 # 0 1111 1111 = 2^(15-8) * (1 + 15/16) = 248
+            out = torch.mul(sign, output_abs) 
+        return out
+
+    @staticmethod
+    def backward(ctx, grad_output):     
+      grad_input = grad_output.clone() 
+      return grad_input
+  return qfn().apply
+
+class weight_quantize_func(nn.Module):    
+  def __init__(self, q_bit):
+    super(weight_quantize_func, self).__init__()
+    assert q_bit <= 8 or q_bit == 32
+    self.q_bit = q_bit      
+    self.quantize = quantize_weight(k=q_bit) 
 
   def forward(self, x):
-    if self.w_bit == 32:
+    if self.q_bit == 32:
       weight_q = x
-    elif self.w_bit == 8:
-      weight_q = self.uniform_q(x)  # W_sfp 
-      
+    elif self.q_bit == 8 or self.q_bit == 7:
+      weight_q = self.quantize(x)  
     return weight_q
 
-def conv2d_Q_mobilenet(w_bit, Kw, Ka):
-  class Conv2d_Q(nn.Conv2d):  
-    def __init__(self, in_channels, out_channels, kernel_size, Kw = Kw, Ka = Ka, stride=1, 
-                padding=0, dilation=1, groups=1, bias=False):
-      super(Conv2d_Q, self).__init__(in_channels, out_channels, kernel_size, stride,
-                                    padding, dilation, groups, bias)
-      self.w_bit = w_bit
-      self.quantize_fn = weight_quantize_fn(w_bit=w_bit)
-      self.Kw = torch.tensor(Kw)
-      self.Ka = torch.tensor(Ka)
-      #print(self.Kw)
-      #print(self.Ka)
-    def forward(self, input, order=None):
-      self.input_q = self.quantize_fn(input/self.Ka) #量化并缩放激活值
-      self.weight_q = self.quantize_fn(self.weight/self.Kw)  #量化并缩放权重
-      self.output = F.conv2d(self.input_q, self.weight_q, self.bias, self.stride,
-                    self.padding, self.dilation, self.groups)*self.Ka * self.Kw
-      return self.output
-  return Conv2d_Q
+class act_quantize_func(nn.Module): 
+  def __init__(self, q_bit):
+    super(act_quantize_func, self).__init__()
+    assert q_bit <= 8 or q_bit == 32
+    self.q_bit = q_bit                  
+    self.quantize = quantize_act(k=q_bit) 
 
-def linear_Q_fn(w_bit):      #全连接层
-  class Linear_Q(nn.Linear):
-    def __init__(self, in_features, out_features, bias=True):
-      super(Linear_Q, self).__init__(in_features, out_features, bias)
-      self.w_bit = w_bit
-      self.quantize_fn = weight_quantize_fn(w_bit=w_bit)
+  def forward(self, x):
+    if self.q_bit == 32:
+      act_q = x
+    elif self.q_bit == 8 or self.q_bit == 7:
+      act_q = self.quantize(x)  
+    return act_q
 
-    def forward(self, input):
-      self.input_q = self.quantize_fn(input/0.6350061355098602)
-      self.weight_q = self.quantize_fn(self.weight/0.05926013761951077)
-      self.bias_q = self.bias /0.6350061355098602 /0.05926013761951077
-      out =  F.linear(self.input_q, self.weight_q, self.bias)*0.6350061355098602*0.05926013761951077
-      return out
-  return Linear_Q
+class layerout_quantize_func(nn.Module): 
+  def __init__(self, q_bit):
+    super(layerout_quantize_func, self).__init__()
+    assert q_bit <= 8 or q_bit == 32
+    self.q_bit = q_bit 
+    self.quantize = quantize_layerout(k = q_bit) 
 
-def conv2d_Q_mobilenet_m2(w_bit, Kw, Ka):   # mode 2: learnable parameter: w/Kw
-  class Conv2d_Q(nn.Conv2d):  
-    def __init__(self, in_channels, out_channels, kernel_size, Kw = Kw, Ka = Ka, stride=1, 
-                padding=0, dilation=1, groups=1, bias=False):
-      super(Conv2d_Q, self).__init__(in_channels, out_channels, kernel_size, stride,
-                                    padding, dilation, groups, bias)
-      self.w_bit = w_bit
-      self.quantize_fn = weight_quantize_fn(w_bit=w_bit)
-      self.Kw = torch.tensor(Kw)
-      self.Ka = torch.tensor(Ka)
-      #print(self.Kw)
-      #print(self.Ka)
-
-    def forward(self, input, order=None):
-      self.input_q = self.quantize_fn(input/self.Ka) #量化并缩放激活值
-      self.weight_q = self.quantize_fn(self.weight)  #量化缩放后权重
-      self.output = F.conv2d(self.input_q, self.weight_q, self.bias, self.stride,
-                    self.padding, self.dilation, self.groups)*self.Ka * self.Kw
-      return self.output
-  return Conv2d_Q
-
-def linear_Q_m2(w_bit):                  # mode 2: learnable parameter: w/Kw
-  class Linear_Q(nn.Linear):
-    def __init__(self, in_features, out_features, bias=True):
-      super(Linear_Q, self).__init__(in_features, out_features, bias)
-      self.w_bit = w_bit
-      self.quantize_fn = weight_quantize_fn(w_bit=w_bit)
-
-    def forward(self, input):
-      self.input_q = self.quantize_fn(input/0.6350061355098602)
-      self.weight_q = self.quantize_fn(self.weight)
-      self.bias_q = self.bias /0.6350061355098602 /0.05926013761951077
-      out =  F.linear(self.input_q, self.weight_q, self.bias)*0.6350061355098602*0.05926013761951077
-      return out
-  return Linear_Q
-
-##原本的没有缩放的卷积
-def conv2d_Q_fn(w_bit):
-  class Conv2d_Q(nn.Conv2d):  
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1,   #dilation: controls the spacing between the kernel points. 扩大感受野，=1 --> 标准卷积
-                 padding=0, dilation=1, groups=1, bias=True):
-      super(Conv2d_Q, self).__init__(in_channels, out_channels, kernel_size, stride,
-                                     padding, dilation, groups, bias)
-      self.w_bit = w_bit
-      self.quantize_fn = weight_quantize_fn(w_bit=w_bit)
-
-    def forward(self, input, order=None):
-      input_q = self.quantize_fn(input)  #
-      weight_q = self.quantize_fn(self.weight)  #
-      output = F.conv2d(input_q, weight_q, self.bias, self.stride,
-                      self.padding, self.dilation, self.groups)
-      return output 
-  return Conv2d_Q
-
+  def forward(self, x):
+    if self.q_bit == 32:
+      out_q = x
+    elif self.q_bit == 8 or self.q_bit == 7:
+      out_q = self.quantize(x)  
+    return out_q
 
 if __name__ == '__main__':
-  import numpy as np
-
-  a = torch.rand(1, 3, 32, 32)
-
-  Conv2d = conv2d_Q_fn(w_bit=1)
-  conv = Conv2d(in_channels=256, out_channels=256, kernel_size=3, padding=1)
-
-  img = torch.randn(1, 256, 56, 56)
-  print(img.max().item(), img.min().item())
-  out = conv(img)
-  print(out.max().item(), out.min().item())
+  #x = torch.rand(1,32)*15
+  x = torch.tensor([0.01, 0.06251, 0.125, 0.1, 0.2, 1, 15])
+  z = quantize_act(8)(x)
+  print (x)
+  print (z)

@@ -4,9 +4,12 @@ import torch
 import sys
 sys.path.append('..')
 from utils.sfp_quant import *
+from utils.activation_func import *
+from utils.conv2d_func import *
 
-class MobileNetV1_100_Q(nn.Module):
-    def __init__(self, ch_in, wbit, abit):
+
+class MobileNetV1_Q(nn.Module):
+    def __init__(self, ch_in, qbit):
         super(MobileNetV1_Q, self).__init__()
         
         ka = [2.640000104904175, 2.6023073196411133, 6.629735469818115, 8.06674575805664, 13.16812801361084, 3.5005202293395996, 5.474634170532227, 3.467971086502075, 2.6531498432159424, 2.276766061782837, 4.367635250091553, 2.7206525802612305, 5.651697635650635, 2.0327985286712646, 2.945751905441284, 1.9591712951660156, 3.280294418334961, 1.7093303203582764, 3.6466710567474365, 1.7202441692352295, 6.958395004272461, 2.871131658554077, 12.649026870727539, 2.9706058502197266, 6.570033073425293, 2.18925142288208, 2.2897119522094727, 9.842595100402832]
@@ -15,10 +18,8 @@ class MobileNetV1_100_Q(nn.Module):
         kw = [0.8589458465576172, 1.9635683298110962, 1.2365360260009766, 0.5438900589942932, 1.2541989088058472, 0.9803679585456848, 1.236991286277771, 0.28881916403770447, 1.0297598838806152, 0.8297733068466187, 0.7577158212661743, 0.23283751308918, 0.5724515318870544, 0.6798462867736816, 0.5818396806716919, 0.8004610538482666, 0.5788508057594299, 0.589914083480835, 0.721644401550293, 0.7284839749336243, 0.8877108097076416, 0.4677695035934448, 0.8636178374290466, 0.306072473526001, 0.8925297856330872, 0.21044661104679108, 0.6525866389274597, 0.918532133102417]
         Kw = np.array(kw)/15.5
 
-        Conv2d = conv2d_Q_mobilenet(w_bit=wbit, Kw = Kw, Ka = Ka)
-        Linear = linear_Q_fn(w_bit=wbit)
-        #self.act_q = activation_quantize_fn(a_bit=abit)
-        weight_quantize_fn(w_bit=wbit)
+        Conv2d = conv2d_Q(q_bit = qbit, Kw = Kw, Ka = Ka)
+        Linear = linear_Q(q_bit=qbit, Kw = Kw[27], Ka = Ka[27])
 
         def conv_dw(inp, oup, stride, Kw, Ka):
             return nn.Sequential(
@@ -26,13 +27,10 @@ class MobileNetV1_100_Q(nn.Module):
                 Conv2d(inp, inp, 3, Kw[0], Ka[0], stride, 1, groups=inp, bias=False),
                 nn.BatchNorm2d(inp),
                 nn.ReLU(inplace=True),
-                #activation_quantize_fn(a_bit=abit),
-
                 # pw
                 Conv2d(inp, oup, 1, Kw[1], Ka[1], 1, 0, bias=False),
                 nn.BatchNorm2d(oup),
                 nn.ReLU(inplace=True),
-                #activation_quantize_fn(a_bit=abit),
                 )
 
         def conv_bn(inp, oup, stride, Kw, Ka):
@@ -40,7 +38,6 @@ class MobileNetV1_100_Q(nn.Module):
                     Conv2d(inp, oup, 3, Kw, Ka, stride, 1,  bias=False), 
                     nn.BatchNorm2d(oup),
                     nn.ReLU(inplace=True),
-                    #activation_quantize_fn(a_bit=abit),
                     )
         
         self.model = nn.Sequential(
@@ -60,7 +57,8 @@ class MobileNetV1_100_Q(nn.Module):
             conv_dw(1024, 1024, 1, Kw[25:], Ka[25:]),
             nn.AvgPool2d(7)
         )
-        self.fc = Linear(1024, 100)
+        #self.fc = Linear(1024, 1000)
+        self.fc = nn.Linear(1024, 1000)
 
     def get_layer_inputs(self):
             return self.layer_inputs
@@ -170,144 +168,12 @@ class MobileNetV1_100_Q(nn.Module):
         self.layer_outputs[27] = x
         '''
         return x
-##############
-class MobileNetV1_100_m2(nn.Module):
-    def __init__(self, ch_in, wbit, abit):
-        super(MobileNetV1_m2, self).__init__()
-        
-        ka = [2.640000104904175, 2.6023073196411133, 6.629735469818115, 8.06674575805664, 13.16812801361084, 3.5005202293395996, 5.474634170532227, 3.467971086502075, 2.6531498432159424, 2.276766061782837, 4.367635250091553, 2.7206525802612305, 5.651697635650635, 2.0327985286712646, 2.945751905441284, 1.9591712951660156, 3.280294418334961, 1.7093303203582764, 3.6466710567474365, 1.7202441692352295, 6.958395004272461, 2.871131658554077, 12.649026870727539, 2.9706058502197266, 6.570033073425293, 2.18925142288208, 2.2897119522094727, 9.842595100402832]
-        Ka = np.array(ka)/15.5
-
-        kw = [0.8589458465576172, 1.9635683298110962, 1.2365360260009766, 0.5438900589942932, 1.2541989088058472, 0.9803679585456848, 1.236991286277771, 0.28881916403770447, 1.0297598838806152, 0.8297733068466187, 0.7577158212661743, 0.23283751308918, 0.5724515318870544, 0.6798462867736816, 0.5818396806716919, 0.8004610538482666, 0.5788508057594299, 0.589914083480835, 0.721644401550293, 0.7284839749336243, 0.8877108097076416, 0.4677695035934448, 0.8636178374290466, 0.306072473526001, 0.8925297856330872, 0.21044661104679108, 0.6525866389274597, 0.918532133102417]
-        Kw = np.array(kw)/15.5
-
-        Conv2d = conv2d_Q_mobilenet_m2(w_bit=wbit, Kw = Kw, Ka = Ka)
-        Linear = linear_Q_m2(w_bit=wbit)
-        #self.act_q = activation_quantize_fn(a_bit=abit)
-        weight_quantize_fn(w_bit=wbit)
-        
-        def conv_dw(inp, oup, stride, Kw, Ka):
-            return nn.Sequential(
-                # dw
-                Conv2d(inp, inp, 3, Kw[0], Ka[0], stride, 1, groups=inp, bias=False),
-                nn.BatchNorm2d(inp),
-                nn.ReLU(inplace=True),
-                #activation_quantize_fn(a_bit=abit),
-
-                # pw
-                Conv2d(inp, oup, 1, Kw[1], Ka[1], 1, 0, bias=False),
-                nn.BatchNorm2d(oup),
-                nn.ReLU(inplace=True),
-                #activation_quantize_fn(a_bit=abit),
-                )
-
-        def conv_bn(inp, oup, stride, Kw, Ka):
-                return nn.Sequential(
-                    Conv2d(inp, oup, 3, Kw, Ka, stride, 1,  bias=False), 
-                    nn.BatchNorm2d(oup),
-                    nn.ReLU(inplace=True),
-                    #activation_quantize_fn(a_bit=abit),
-                    )
-        
-        self.model = nn.Sequential(
-            conv_bn(ch_in, 32, 2, Kw[0], Ka[0]),
-            conv_dw(32, 64, 1, Kw[1:], Ka[1:]),
-            conv_dw(64, 128, 2, Kw[3:], Ka[3:]),
-            conv_dw(128, 128, 1, Kw[5:], Ka[5:]),
-            conv_dw(128, 256, 2, Kw[7:], Ka[7:]),
-            conv_dw(256, 256, 1, Kw[9:], Ka[9:]),
-            conv_dw(256, 512, 2, Kw[11:], Ka[11:]),
-            conv_dw(512, 512, 1, Kw[13:], Ka[13:]),
-            conv_dw(512, 512, 1, Kw[15:], Ka[15:]),
-            conv_dw(512, 512, 1, Kw[17:], Ka[17:]),
-            conv_dw(512, 512, 1, Kw[19:], Ka[19:]),
-            conv_dw(512, 512, 1, Kw[21:], Ka[21:]),
-            conv_dw(512, 1024, 2, Kw[23:], Ka[23:]),
-            conv_dw(1024, 1024, 1, Kw[25:], Ka[25:]),
-            nn.AvgPool2d(7)
-        )
-        self.fc = Linear(1024, 100)
-
-    def get_layer_inputs(self):
-            return self.layer_inputs
-        
-    def get_layer_outputs(self):
-            return self.layer_outputs
-        
-    def reset_layer_inputs_outputs(self):
-            self.layer_inputs = {}
-            self.layer_outputs = {}
-
-    def get_layer_weights(self):
-            return self.layer_weights
-        
-    def reset_layer_weights(self):
-            self.layer_weights = {}
-
-
-    def forward(self, x):
-        x = self.model(x)
-        x = x.view(-1, 1024)
-        x = self.fc(x)
-
-        return x
-
-class MobileNetV1(nn.Module):
-    def __init__(self, ch_in):
-        super(MobileNetV1, self).__init__()
-
-        def conv_bn(inp, oup, stride):
-            return nn.Sequential(
-                nn.Conv2d(inp, oup, 3, stride, 1, bias=False),
-                nn.BatchNorm2d(oup),
-                nn.ReLU(inplace=True)
-                )
-
-        def conv_dw(inp, oup, stride):
-            return nn.Sequential(
-                # dw
-                nn.Conv2d(inp, inp, 3, stride, 1, groups=inp, bias=False),
-                nn.BatchNorm2d(inp),
-                nn.ReLU(inplace=True),
-
-                # pw
-                nn.Conv2d(inp, oup, 1, 1, 0, bias=False),
-                nn.BatchNorm2d(oup),
-                nn.ReLU(inplace=True),
-                )
-
-        self.model = nn.Sequential(
-            conv_bn(ch_in, 32, 2),
-            conv_dw(32, 64, 1),
-            conv_dw(64, 128, 2),
-            conv_dw(128, 128, 1),
-            conv_dw(128, 256, 2),
-            conv_dw(256, 256, 1),
-            conv_dw(256, 512, 2),
-            conv_dw(512, 512, 1),
-            conv_dw(512, 512, 1),
-            conv_dw(512, 512, 1),
-            conv_dw(512, 512, 1),
-            conv_dw(512, 512, 1),
-            conv_dw(512, 1024, 2),
-            conv_dw(1024, 1024, 1),
-            nn.AvgPool2d(7)
-        )
-        self.fc = Linear(1024, 100)
-
-    def forward(self, x):
-
-        x = self.model(x)
-        x = x.view(-1, 1024)
-        x = self.fc(x)
-        
-        return x
 
 if __name__=='__main__':
     # model check
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = MobileNetV1_Q(ch_in=3, wbit=32, abit=32).to(device)
+    model = MobileNetV1_Q(ch_in=3, qbit=32, abit=32).to(device)
     #model = MobileNetV1(ch_in=3, n_classes=10).to(device)
     #print(model)
     #summary(model, input_size=(3, 224, 224), device='cuda')

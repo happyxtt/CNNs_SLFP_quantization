@@ -5,8 +5,9 @@ import torch.nn.init as init
 import torch.utils.model_zoo as model_zoo
 import sys
 sys.path.append('..')
-from utils.sfp_quant import *   
-from utils.sfp_conv_squeezenet import *
+from utils.sfp_quant import *
+from utils.activation_func import *
+from utils.conv2d_func import *
 
 __all__ = ['SqueezeNet']
 
@@ -19,12 +20,12 @@ model_urls = {
 class Fire(nn.Module):
 
     def __init__(self, inplanes, squeeze_planes,
-                 expand1x1_planes, expand3x3_planes, wbit, Kw, Ka):
+                 expand1x1_planes, expand3x3_planes, qbit, Kw, Ka):
         super(Fire, self).__init__()
 
-        Conv2d_1 = conv2d_Q_squeezenet(w_bit = wbit, Kw = Kw[0], Ka = Ka[0])
-        Conv2d_2 = conv2d_Q_squeezenet(w_bit = wbit, Kw = Kw[1], Ka = Ka[1])
-        Conv2d_3 = conv2d_Q_squeezenet(w_bit = wbit, Kw = Kw[2], Ka = Ka[2])
+        Conv2d_1 = conv2d_Q_bias(q_bit = qbit, Kw = Kw[0], Ka = Ka[0])
+        Conv2d_2 = conv2d_Q_bias(q_bit = qbit, Kw = Kw[1], Ka = Ka[1])
+        Conv2d_3 = conv2d_Q_bias(q_bit = qbit, Kw = Kw[2], Ka = Ka[2])
 
         self.inplanes = inplanes
         self.squeeze = Conv2d_1(inplanes, squeeze_planes, kernel_size=1)
@@ -45,7 +46,7 @@ class Fire(nn.Module):
 
 
 class SqueezeNet(nn.Module):
-    def __init__(self, wbit, version=1.0, num_classes=1000):
+    def __init__(self, qbit, version=1.0, num_classes=1000):
         super(SqueezeNet, self).__init__()
 
         inout = [2.640000104904175, 28.194124221801758, 72.97775268554688, 72.97775268554688, 77.43336486816406, 120.30152893066406, 120.30152893066406, 135.91839599609375, 180.7229766845703, 180.7229766845703, 150.3900604248047, 442.6010437011719, 442.6010437011719, 482.10418701171875, 619.6080322265625, 619.6080322265625, 487.75390625, 919.07763671875, 919.07763671875, 597.53125, 786.5740966796875, 786.5740966796875, 632.507080078125, 973.8804931640625, 973.8804931640625, 715.134033203125]
@@ -53,8 +54,8 @@ class SqueezeNet(nn.Module):
         weight=[0.791490912437439, 1.0884634256362915, 0.9738085865974426, 0.8482335209846497, 0.8622108101844788, 1.059234857559204, 0.5848156213760376, 1.0154176950454712, 0.7202360033988953, 0.8102350831031799, 2.0325794219970703, 0.6379887461662292, 0.877097487449646, 0.6971914172172546, 0.6247027516365051, 0.642976701259613, 0.735572338104248, 0.5566408634185791, 0.4962397813796997, 0.5997017025947571, 0.5008355379104614, 0.6644789576530457, 0.6134956479072571, 0.5012431144714355, 0.5272226333618164, 0.2842995524406433]
         Kw = np.array(weight)/15.5
 
-        Conv2d_0 = conv2d_Q_squeezenet(w_bit = wbit, Ka = Ka[0], Kw = Kw[0])
-        Conv2d_final = conv2d_Q_squeezenet(w_bit = wbit, Ka = Ka[25], Kw = Kw[25])
+        Conv2d_0 = conv2d_Q_bias(q_bit = qbit, Ka = Ka[0], Kw = Kw[0])
+        Conv2d_final = conv2d_Q_bias(q_bit = qbit, Ka = Ka[25], Kw = Kw[25])
         if version not in [1.0, 1.1]:
             raise ValueError("Unsupported SqueezeNet version {version}:"
                              "1.0 or 1.1 expected".format(version=version))
@@ -64,16 +65,16 @@ class SqueezeNet(nn.Module):
                 Conv2d_0(3, 96, kernel_size=7, stride=2),  #1
                 nn.ReLU(inplace=True),
                 nn.MaxPool2d(kernel_size=3, stride=2, ceil_mode=True),
-                Fire(96, 16, 64, 64, wbit = wbit, Kw = Kw[1:], Ka = Ka[1:]),  
-                Fire(128, 16, 64, 64, wbit = wbit, Kw = Kw[4:], Ka = Ka[4:]),
-                Fire(128, 32, 128, 128, wbit = wbit, Kw = Kw[7:], Ka = Ka[7:]),
+                Fire(96, 16, 64, 64, qbit = qbit, Kw = Kw[1:], Ka = Ka[1:]),  
+                Fire(128, 16, 64, 64, qbit = qbit, Kw = Kw[4:], Ka = Ka[4:]),
+                Fire(128, 32, 128, 128, qbit = qbit, Kw = Kw[7:], Ka = Ka[7:]),
                 nn.MaxPool2d(kernel_size=3, stride=2, ceil_mode=True),
-                Fire(256, 32, 128, 128, wbit = wbit, Kw = Kw[10:], Ka = Ka[10:]),
-                Fire(256, 48, 192, 192, wbit = wbit, Kw = Kw[13:], Ka = Ka[13:]),
-                Fire(384, 48, 192, 192, wbit = wbit, Kw = Kw[16:], Ka = Ka[16:]),
-                Fire(384, 64, 256, 256, wbit = wbit, Kw = Kw[19:], Ka = Ka[19:]),
+                Fire(256, 32, 128, 128, qbit = qbit, Kw = Kw[10:], Ka = Ka[10:]),
+                Fire(256, 48, 192, 192, qbit = qbit, Kw = Kw[13:], Ka = Ka[13:]),
+                Fire(384, 48, 192, 192, qbit = qbit, Kw = Kw[16:], Ka = Ka[16:]),
+                Fire(384, 64, 256, 256, qbit = qbit, Kw = Kw[19:], Ka = Ka[19:]),
                 nn.MaxPool2d(kernel_size=3, stride=2, ceil_mode=True),
-                Fire(512, 64, 256, 256, wbit = wbit, Kw = Kw[22:], Ka = Ka[22:]),
+                Fire(512, 64, 256, 256, qbit = qbit, Kw = Kw[22:], Ka = Ka[22:]),
             )
         # Final convolution is initialized differently form the rest
         final_conv = Conv2d_final(512, self.num_classes, kernel_size=1)
@@ -174,7 +175,7 @@ if __name__=='__main__':
     # model check
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = SqueezeNet(wbit = 32).to(device)
+    model = SqueezeNet(qbit = 32).to(device)
     #model = MobileNetV1(ch_in=3, n_classes=10).to(device)
     #print(model)
     #summary(model, input_size=(3, 224, 224), device='cuda')
