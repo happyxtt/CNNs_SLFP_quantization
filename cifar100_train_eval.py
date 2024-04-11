@@ -210,14 +210,13 @@ def main():
 
     summary_writer.add_scalar('Precision@1', acc, global_step=epoch)
 
-  def get_scale_factor(model, data_loader, total_images): # Ka, Kw
+  def get_scale_factor(model, data_loader, total_images): # get Ka, Kw
       model.eval()
       correct = 0
       count = 0
-      layer_inputs = {}  # Used to store inputs for each layer
-      layer_outputs = {}  # Used to store outputs for each layer
-      layer_weights = {}
-      #inputimg = {}
+      layer_inputs = {}  # store inputs for each layer
+      layer_outputs = {} 
+      layer_weights = {} 
       
       for batch_idx, (inputs, targets) in enumerate(data_loader):
           inputs, targets = inputs.cuda(), targets.cuda()
@@ -231,7 +230,6 @@ def main():
           current_layer_outputs = model.get_layer_outputs()
           current_layer_weights = model.get_layer_weights()
           #print(inputimg.shape)
-          #print(inputimg[0].cpu().numpy())
           
           for idx, input_tensor in current_layer_inputs.items():
               if idx not in layer_inputs:
@@ -279,8 +277,9 @@ def main():
       return acc, max_abs_layer_inputs, max_abs_layer_outputs, max_abs_layer_weights
 
   if cfg.pre_reference:
-    total_images = 1000  # only 1000 of 10000 imgs are used, to verify the universal effectiveness of the maximum value scaling
+    total_images = 1000  # only 1000 imgs are used to get the scale factor
     accuracy, max_abs_layer_inputs, max_abs_layer_outputs ,max_abs_layer_weights = get_scale_factor(model, eval_loader, total_images)
+    
     print(max_abs_layer_inputs)
     print(max_abs_layer_outputs)
     print(max_abs_layer_weights)
@@ -307,15 +306,19 @@ def main():
   for epoch in range(cfg.max_epochs):
     optimizer.step()
     lr_schedu.step()
+
     if (cfg.retrain == True):
       train(epoch)
-      print("saving....")
+
     test(epoch)
-    print(acc_data)        
+    print(acc_data) 
+
     if (cfg.save_model == True and max(acc_data)> acc_max):
       acc_max = max(acc_data)
       torch.save(model.state_dict(), f'./ckpt/cifar-100/{cfg.net}{cfg.num}_tmp.pth')
       print("max acc :", acc_max)
+      print("saving model....")
+
   summary_writer.close()
 
 if __name__ == '__main__':
