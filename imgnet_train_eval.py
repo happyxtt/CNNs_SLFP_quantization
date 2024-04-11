@@ -37,7 +37,7 @@ parser.add_argument('--data_dir', type=str, default='/opt/datasets/imagenet-1k')
 parser.add_argument('--log_name', type=str, default='imgnet-1k')
 parser.add_argument('--pretrain', action='store_true', default=False)
 parser.add_argument('--retrain', action='store_true', default=False)
-parser.add_argument('--all_validate', action='store_true', default=False) # if all_validate == 0: test images number == 5000, else: == 50000
+parser.add_argument('--all_validate', action='store_true', default=False) # if all_validate is False: test images number == 1000, else: == 50000
 
 parser.add_argument('--Qbits', type=int, default=32)
 
@@ -217,7 +217,7 @@ def main():
   
 ####################  Ka，Kw ################
   
-  def test_with_layer_inputs_and_outputs(model, data_loader, total_images ): #共10000输入，只统计1000个，验证最大值缩放的普遍有效性
+  def test_with_layer_inputs_and_outputs(model, data_loader, total_images ): # 50000 in total, 1000 for test
       model.eval()
       correct = 0
       count = 0
@@ -286,7 +286,7 @@ def main():
             'Precision@1: %.2f%% \n' % (datetime.now(), acc))
       return acc, max_abs_layer_inputs, max_abs_layer_outputs, max_abs_layer_weights
   
-  # total_images = 200
+  # total_images = 1000
   # accuracy, max_abs_layer_inputs, max_abs_layer_outputs ,max_abs_layer_weights = test_with_layer_inputs_and_outputs(model, val_loader, total_images)
   # print(max_abs_layer_inputs)
   # print(max_abs_layer_outputs)

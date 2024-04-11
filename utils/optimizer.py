@@ -185,6 +185,6 @@ class NormalSGD(Optimizer):
                         d_p = d_p.add(momentum, buf)
                     else:
                         d_p = buf
- 
+
                 p.data.add_(-group['lr']*d_p)
         return loss

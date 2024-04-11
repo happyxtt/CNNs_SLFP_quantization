@@ -22,40 +22,31 @@ np.set_printoptions(threshold=np.inf)
 np.set_printoptions(precision=8, suppress=True)
 
 # Training settings
-parser = argparse.ArgumentParser(description='SLFP train and finetune pytorch implementation')
+parser = argparse.ArgumentParser(description='SLFP reference and retrain, pytorch implementation')
 
-""" CustomSGD is used to solve the ununiform of SLFP quantization """
-parser.add_argument('--optimizer', type=str, default='SGD')  # options: SGD or CustomSGD
-
-""" Each network corresponds to two models according to two training strategies.
-    m1: learnable parameter = w
-    m2: learnable parameter = w/kw. (set pretrain_dir as xxxx_m2.pth, get m2 pth by 'pre_xxxnet_weight()' function in autocode.py) """
-parser.add_argument('--net', type=str, default='mobilenet')  # options: shufflenetv2_m1, shufflenetv2_m2  
 parser.add_argument('--root_dir', type=str, default='./')
 parser.add_argument('--data_dir', type=str, default='./data')
 parser.add_argument('--log_name', type=str, default='cifar-100')
-
-parser.add_argument('--if_train', type = int, default=0)
-parser.add_argument('--if_save', type = int, default=0)
-parser.add_argument('--pre_reference', action='store_true', default=False)
-parser.add_argument('--pretrain', action='store_true', default=False)  #default=True：use pretrained parameters  False：random seed
-
 parser.add_argument('--cifar', type=int, default=100)
-parser.add_argument('--Qbits', type=int, default=32)  #1
+# running mode
+parser.add_argument('--retrain', action='store_true', default=False)
+parser.add_argument('--save_model', action='store_true', default=False)
+parser.add_argument('--pre_reference', action='store_true', default=False)
+parser.add_argument('--pretrain', action='store_true', default=False)  # True：use pretrained parameters  False：random seed
+parser.add_argument('--optimizer', type=str, default='SGD')  
+parser.add_argument('--net', type=str, default='mobilenet') 
+# training hyper-parameters
+parser.add_argument('--Qbits', type=int, default=32)  # 7:SFP<3,3>, 8:SLFP<3,4>, 32:FP32
 parser.add_argument('--lr', type=float, default=0.0001)  #0.1
 parser.add_argument('--wd', type=float, default=5e-4)  #1e-4
 
-#parser.add_argument('--num', type=int, default=0)
-
+parser.add_argument('--num', type=int, default=0)
 parser.add_argument('--train_batch_size', type=int, default=256)
 parser.add_argument('--eval_batch_size', type=int, default=128)
 parser.add_argument('--max_epochs', type=int, default=1) #200
-
 parser.add_argument('--log_interval', type=int, default=100)
 parser.add_argument('--use_gpu', type=str, default='0')
 parser.add_argument('--num_workers', type=int, default=5)
-
-parser.add_argument('--cluster', action='store_true', default=False)
 
 cfg = parser.parse_args()  
 
@@ -302,12 +293,12 @@ def main():
   acc_max = 0
   for epoch in range(cfg.max_epochs):
     lr_schedu.step(epoch)
-    if (cfg.if_train == 1):
+    if (cfg.retrain == True):
       train(epoch)
       print("saving....")
     test(epoch)
     print(acc_data)        
-    if (cfg.if_save == 1 and max(acc_data)> acc_max):
+    if (cfg.save_model == True and max(acc_data)> acc_max):
       acc_max = max(acc_data)
       torch.save(model.state_dict(), f'./ckpt/cifar-100/{cfg.net}{cfg.num}_tmp.pth')
       print("max acc :", acc_max)
