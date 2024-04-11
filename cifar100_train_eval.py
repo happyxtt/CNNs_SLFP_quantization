@@ -13,7 +13,6 @@ Dependencies:
 - Python 3.6+
 - PyTorch 1.0+
 - torchvision 0.2.2+
-- numpy
 
 Installation and Running:
 1. Clone this repository
