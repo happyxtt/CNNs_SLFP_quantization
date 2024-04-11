@@ -1,4 +1,27 @@
-# final version
+"""
+Project Name: CIFAR-100 Training and Evaluation
+Author: Xintong He
+
+Project Description:
+This is a PyTorch implementation for training and evaluating on the CIFAR-100 dataset. 
+It includes implementations of quantized ShuffleNet V2, MobileNet V1, VGG16
+and their revised version by re-selecting the non-linear activation function.
+
+8-bit SLFP and 7-bit SFP quantization based on max-scaling are implemented.
+
+Dependencies:
+- Python 3.6+
+- PyTorch 1.0+
+- torchvision 0.2.2+
+- numpy
+
+Installation and Running:
+1. Clone this repository
+2. Run the code: python ./cifar100_train_eval.py --Qbits <bit width> --net <net name> ...
+Arguments are optional, please refer to the argparse settings in the code.
+The default setting is 32-bit floating point reference of mobilenetv1 on CIFAR-100.
+
+"""
 import os
 import time
 import argparse
