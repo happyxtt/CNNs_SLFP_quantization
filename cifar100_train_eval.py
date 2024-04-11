@@ -111,15 +111,6 @@ def main():
     model = VGG16_gelu(qbit=cfg.Qbits).cuda()
     pretrain_dir = './ckpt/cifar-100/vgg16_gelu73.39.pth'
   
-  ################-----MODEL-----################
-  #model = MobileNetV3_Large(qbit=cfg.Qbits, abit=cfg.Abits).cuda()
-  #model = resnet20(Qbits=cfg.Qbits, abits=cfg.Abits).cuda()
-  #model = VGG16(qbit=cfg.Qbits, abit=cfg.Abits).cuda()
-  #model = MobileNetV1_inference(ch_in=3, n_classes=100,qbit=cfg.Qbits, abit=cfg.Abits).cuda()
-  #model = MobileNetV1_scale_train(ch_in=3, n_classes=100,qbit=cfg.Qbits, abit=cfg.Abits).cuda()
-  #model = ShuffleNetV2(qbit=cfg.Qbits).cuda()
-  ################---------------################
-
   # optimizer
   if cfg.optimizer == "SSGD" :
     print("optimizer => SSGD")
@@ -197,7 +188,7 @@ def main():
 
     summary_writer.add_scalar('Precision@1', acc, global_step=epoch)
 
-  def test_with_layer_inputs_and_outputs(model, data_loader, total_images): # Ka, Kw
+  def get_scale_factor(model, data_loader, total_images): # Ka, Kw
       model.eval()
       correct = 0
       count = 0
@@ -267,7 +258,7 @@ def main():
 
   if cfg.pre_reference:
     total_images = 1000  # only 1000 of 10000 imgs are used, to verify the universal effectiveness of the maximum value scaling
-    accuracy, max_abs_layer_inputs, max_abs_layer_outputs ,max_abs_layer_weights = test_with_layer_inputs_and_outputs(model, eval_loader, total_images)
+    accuracy, max_abs_layer_inputs, max_abs_layer_outputs ,max_abs_layer_weights = get_scale_factor(model, eval_loader, total_images)
     print(max_abs_layer_inputs)
     print(max_abs_layer_outputs)
     print(max_abs_layer_weights)
@@ -292,7 +283,8 @@ def main():
   acc_data = [] 
   acc_max = 0
   for epoch in range(cfg.max_epochs):
-    lr_schedu.step(epoch)
+    optimizer.step()
+    lr_schedu.step()
     if (cfg.retrain == True):
       train(epoch)
       print("saving....")
