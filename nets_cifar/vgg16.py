@@ -189,12 +189,15 @@ class VGG16_gelu(nn.Module):
 
         ka = [2.7537312507629395, 11.711949348449707, 12.62769603729248, 4.791536808013916, 5.771259307861328, 4.079975128173828, 5.4690165519714355, 5.7750959396362305, 9.395009994506836, 8.310335159301758, 4.690559387207031, 2.743001937866211, 2.2729594707489014, 5.308618068695068, 4.6886982917785645, 6.451591491699219]
         Ka = np.array(ka)/15.5
+        #Ka = np.ones_like(Ka)
 
         kw = [1.570762276649475, 0.7567926645278931, 0.6021664142608643, 0.34334003925323486, 0.3607594072818756, 0.21708044409751892, 0.2369239330291748, 0.26995745301246643, 0.2696983218193054, 0.21481803059577942, 0.15883386135101318, 0.18896079063415527, 0.17712126672267914, 0.16824819147586823, 0.14480118453502655, 0.24329078197479248]
         Kw = np.array(kw)/15.5
+        #Kw = np.ones_like(Kw)
 
-        Conv2d = conv2d_Q(q_bit = qbit, Kw = Kw, Ka = Ka)
-        Linear = linear_Q(q_bit=qbit, Kw = Kw, Ka = Ka)
+        Conv2d_0 = conv2d_Q(q_bit = qbit, Kw = Kw, Ka = Ka)
+        Conv2d = conv2d_Q_with_gelu(q_bit = qbit, Kw = Kw, Ka = Ka)
+        Linear = linear_Q_with_gelu(q_bit=qbit, Kw = Kw, Ka = Ka)
         layerout_quantize_func(q_bit=qbit)
 
         self.layer_inputs = {}
@@ -202,15 +205,17 @@ class VGG16_gelu(nn.Module):
         self.layer_weights = {}
 
         self.layer1 = nn.Sequential(
-            Conv2d(3, 64, 3, Kw[0], Ka[0], 1, 1),
+            Conv2d_0(3, 64, 3, Kw[0], Ka[0], 1, 1),
             nn.BatchNorm2d(64),
             layerout_quantize_func(q_bit=qbit),
-            nn.GELU(),
+            #nn.GELU(),
+            Identity(),
 
             Conv2d(64, 64, 3, Kw[1], Ka[1], 1, 1),
             nn.BatchNorm2d(64),
             layerout_quantize_func(q_bit=qbit),
-            nn.GELU(),
+            #nn.GELU(),
+            Identity(),
 
             nn.MaxPool2d(2, 2)
         )
@@ -218,12 +223,14 @@ class VGG16_gelu(nn.Module):
             Conv2d(64, 128, 3, Kw[2], Ka[2], 1, 1),
             nn.BatchNorm2d(128),
             layerout_quantize_func(q_bit=qbit),
-            nn.GELU(),
+            #nn.GELU(),
+            Identity(),
 
             Conv2d(128, 128, 3, Kw[3], Ka[3], 1, 1),
             nn.BatchNorm2d(128),
             layerout_quantize_func(q_bit=qbit),
-            nn.GELU(),
+            #nn.GELU(),
+            Identity(),
 
             nn.MaxPool2d(2, 2)
         )
@@ -231,34 +238,40 @@ class VGG16_gelu(nn.Module):
             Conv2d(128, 256, 3, Kw[4], Ka[4], 1, 1),
             nn.BatchNorm2d(256),
             layerout_quantize_func(q_bit=qbit),
-            nn.GELU(),
+            #nn.GELU(),
+            Identity(),
 
             Conv2d(256, 256, 3, Kw[5], Ka[5], 1, 1),
             nn.BatchNorm2d(256),
             layerout_quantize_func(q_bit=qbit),
-            nn.GELU(),
+            #nn.GELU(),
+            Identity(),
 
             Conv2d(256, 256, 3, Kw[6], Ka[6], 1, 1),
             nn.BatchNorm2d(256),
             layerout_quantize_func(q_bit=qbit),
-            nn.GELU(),
+            #nn.GELU(),
+            Identity(),
             nn.MaxPool2d(2, 2)
         )
         self.layer4 = nn.Sequential(
             Conv2d(256, 512, 3, Kw[7], Ka[7], 1, 1),
             nn.BatchNorm2d(512),
             layerout_quantize_func(q_bit=qbit),
-            nn.GELU(),
+            #nn.GELU(),
+            Identity(),
 
             Conv2d(512, 512, 3, Kw[8], Ka[8], 1, 1),
             nn.BatchNorm2d(512),
             layerout_quantize_func(q_bit=qbit),
-            nn.GELU(),
+            #nn.GELU(),
+            Identity(),
 
             Conv2d(512, 512, 3, Kw[9], Ka[9], 1, 1),
             nn.BatchNorm2d(512),
             layerout_quantize_func(q_bit=qbit),
-            nn.GELU(),
+            #nn.GELU(),
+            Identity(),
 
             nn.MaxPool2d(2, 2)
         )
@@ -266,17 +279,20 @@ class VGG16_gelu(nn.Module):
             Conv2d(512, 512, 3, Kw[10], Ka[10], 1, 1),
             nn.BatchNorm2d(512),
             layerout_quantize_func(q_bit=qbit),
-            nn.GELU(),
+            #nn.GELU(),
+            Identity(),
 
             Conv2d(512, 512, 3, Kw[11], Ka[11], 1, 1),
             nn.BatchNorm2d(512),
             layerout_quantize_func(q_bit=qbit),
-            nn.GELU(),
+            #nn.GELU(),
+            Identity(),
 
             Conv2d(512, 512, 3, Kw[12], Ka[12], 1, 1),
             nn.BatchNorm2d(512),
             layerout_quantize_func(q_bit=qbit),
-            nn.GELU(),
+            #nn.GELU(),
+            Identity(),
             nn.MaxPool2d(2, 2)
         )
         self.fc1 = nn.Sequential(
@@ -284,13 +300,15 @@ class VGG16_gelu(nn.Module):
             nn.Flatten(),
             Linear(512, 512, Kw[13], Ka[13]),
             layerout_quantize_func(q_bit=qbit),
-            nn.GELU(),
+            #nn.GELU(),
+            Identity(),
             nn.Dropout(0.4)
         )
         self.fc2 = nn.Sequential(
             Linear(512, 256, Kw[14], Ka[14]),
             layerout_quantize_func(q_bit=qbit),
-            nn.GELU(),
+            #nn.GELU(),
+            Identity(),
             nn.Dropout(0.4)
         )
         self.fc3 = Linear(256, 100, Kw[15], Ka[15])
@@ -381,6 +399,6 @@ if __name__ == '__main__':
     features.append(output.data.cpu().numpy())
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-  model = VGG16_gelu(32,32).to(device)
+  model = VGG16_gelu(32).to(device)
   print(model)
   # torchsummary.summary(model, (3,224,224) ,device="cuda")

@@ -1,4 +1,26 @@
+"""
+Project Name: ImageNet-1k Training and Evaluation
+Author: Xintong He
 
+Project Description:
+This is a PyTorch implementation for training and evaluating on the Imagenet dataset. 
+It includes implementations of quantized MobileNet V1, SqueezeNet, AlexNet, and ResNet-50.
+and their revised version by re-selecting the non-linear activation function.
+
+8-bit SLFP and 7-bit SFP quantization based on max-scaling are implemented.
+
+Dependencies:
+- Python 3.6+
+- PyTorch 1.0+
+- torchvision 0.2.2+
+
+Installation and Running:
+1. Clone this repository
+2. Run the code: python ./imgnet_train_eval.py --Qbits <bit width> --net <net name> ...
+Arguments are optional, please refer to the argparse settings in the code.
+The default setting is 32-bit floating point reference of mobilenetv1 on Imagenet.
+
+"""
 import os
 import time
 import math
@@ -41,14 +63,14 @@ parser.add_argument('--all_validate', action='store_true', default=False) # if a
 
 parser.add_argument('--Qbits', type=int, default=32)
 
-parser.add_argument('--lr', type=float, default=1e-4)
+parser.add_argument('--lr', type=float, default=1e-5)
 parser.add_argument('--wd', type=float, default=5e-4)
 
 parser.add_argument('--train_batch_size', type=int, default=32)#256
 parser.add_argument('--eval_batch_size', type=int, default=16)#100
 parser.add_argument('--max_epochs', type=int, default=2)
 
-parser.add_argument('--log_interval', type=int, default=10) #10, 500
+parser.add_argument('--log_interval', type=int, default=500) #10, 500
 parser.add_argument('--use_gpu', type=str, default='0')
 parser.add_argument('--num_workers', type=int, default=1) #20
 
@@ -88,12 +110,13 @@ def main():
   # create model
   print("=> creating model", cfg.net, "..." )
   print(" learning rate = ", cfg.lr)
+  print(" precision = ", cfg.Qbits, "bits")
 
   if cfg.net == "inceptionv3":
     model = inception_v3().cuda()
     pretrain_dir = './ckpt/imgnet-1k/inception_v3.pth'
 
-  if cfg.net == "mobilenetv1":
+  if cfg.net == "mobilenet":
     model = MobileNetV1_Q(ch_in=3, qbit=cfg.Qbits).cuda()
     pretrain_dir = './ckpt/imgnet-1k/mobnetv1_m1_base.pth'
 
@@ -184,8 +207,8 @@ def main():
     else:
       num_samples = 100
    
-    with tqdm(total=num_samples) as pbar:
-      for i, (inputs, targets) in enumerate(val_loader):
+    #with tqdm(total=num_samples) as pbar:
+    for i, (inputs, targets) in enumerate(val_loader):
         if i * cfg.eval_batch_size >= num_samples:
           break 
 
@@ -202,7 +225,7 @@ def main():
 
         top1 += correct[:1].view(-1).float().sum(0, keepdim=True).item()
         top5 += correct[:5].reshape(-1).float().sum(0, keepdim=True).item()
-        pbar.update(cfg.eval_batch_size)
+        #pbar.update(cfg.eval_batch_size)
 
     top1 *= 100 / num_samples
     top5 *= 100 / num_samples

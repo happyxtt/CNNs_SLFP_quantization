@@ -17,6 +17,9 @@ def STLFunction():
       return grad_input
   return stl().apply
 
+class Identity(nn.Module):
+    def forward(self, x):
+        return x
 
 class STL(nn.Module):    
   def __init__(self):

@@ -110,16 +110,16 @@ def main():
   # model
   print("=> creating model", cfg.net, "..." )
   if cfg.net == "shufflenetv2_swish":
-    model = ShuffleNetV2(qbit=cfg.Qbits).cuda()
-    pretrain_dir = './ckpt/cifar-100/shuffle-Swish-71.18.pth'
+    model = ShuffleNetV2_swish(qbit=cfg.Qbits).cuda()
+    pretrain_dir = './ckpt/cifar-100/shufflenetv2_merge_swish_74.66.pth' 
   
   if cfg.net == "shufflenetv2":
     model = ShuffleNetV2(qbit=cfg.Qbits).cuda()
-    pretrain_dir = './ckpt/cifar-100/shuffle-relu-69.39.pth'
+    pretrain_dir = './ckpt/cifar-100/shufflenetv2_relu_72.12.pth'
     
   elif cfg.net == "mobilenet":
     model = MobileNetV1_Q(ch_in=3, qbit=cfg.Qbits).cuda()
-    pretrain_dir = './ckpt/cifar-100/mobnet-fp32-newmodel-60.64.pth'
+    pretrain_dir = './ckpt/cifar-100/mobnet-fp32-newmodel-60.64.pth' 
 
   elif cfg.net == "mobilenet_swish":
     model = MobileNetV1_swish(ch_in=3, qbit=cfg.Qbits).cuda()
@@ -131,24 +131,25 @@ def main():
 
   elif cfg.net == "vgg16_gelu":
     model = VGG16_gelu(qbit=cfg.Qbits).cuda()
-    pretrain_dir = './ckpt/cifar-100/vgg16_gelu73.39.pth'
+    #pretrain_dir = './ckpt/cifar-100/vgg16_gelu73.39.pth'
+    pretrain_dir = './ckpt/cifar-100/vgg16_gelu0_tmp.pth'  #72.82
   
   # optimizer
   if cfg.optimizer == "SSGD" :
-    print("optimizer => SSGD")
+    print("optimizer : SSGD")
     optimizer = SSGD(model.parameters(), qbit = cfg.Qbits, lr = cfg.lr,  momentum=0.9, weight_decay=cfg.wd)
   elif cfg.optimizer == "DSGD":
-    print("optimizer => DSGD")
+    print("optimizer : DSGD")
     optimizer = DSGD(model.parameters(), qbit = cfg.Qbits, lr = cfg.lr, momentum=0.9, weight_decay=cfg.wd)
   elif cfg.optimizer == "CustomSGD":
-    print("optimizer => CustomSGD")
+    print("optimizer : CustomSGD")
     optimizer = CustomSGD(model.parameters(), cfg.lr, momentum=0.9, weight_decay=cfg.wd)
   elif cfg.optimizer == "Adam":
     optimizer = torch.optim.Adam(model.parameters(), cfg.lr)
   elif cfg.optimizer == "RMSprop":
     optimizer = torch.optim.RMSprop(model.parameters(), cfg.lr)
   elif cfg.optimizer == "SGD":
-    print("optimizer => SGD")
+    print("optimizer : SGD")
     optimizer = torch.optim.SGD(model.parameters(), cfg.lr, momentum=0.9, weight_decay=cfg.wd)
 
   lr_schedu = optim.lr_scheduler.MultiStepLR(optimizer, [75,85,100], gamma=0.1)
@@ -303,6 +304,8 @@ def main():
   # main loop
   acc_data = [] 
   acc_max = 0
+  print("Qbits: ", cfg.Qbits)
+  print("lr: ", cfg.lr)
   for epoch in range(cfg.max_epochs):
     optimizer.step()
     lr_schedu.step()

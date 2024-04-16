@@ -186,7 +186,9 @@ class MobileNetV1_swish(nn.Module):
         #Kw = np.ones_like(Kw)
 
         Conv2d = conv2d_Q(q_bit=qbit, Kw = Kw, Ka = Ka)
+        Conv2d_with_swish = conv2d_Q_with_swish(q_bit=qbit, Kw = Kw, Ka = Ka)
         Linear = linear_Q(q_bit=qbit, Kw = Kw[27], Ka = Ka[27])
+        Linear_with_swish = linear_Q_with_swish(q_bit=qbit, Kw = Kw[27], Ka = Ka[27])
         #self.act_q = activation_quantize_fn(a_bit=abit)
         layerout_quantize_func(q_bit=qbit)
         self.layer_inputs = {}
@@ -205,6 +207,30 @@ class MobileNetV1_swish(nn.Module):
                 nn.BatchNorm2d(oup),
                 layerout_quantize_func(q_bit=qbit),
                 Swish(),
+                )
+
+        def conv_dw_with_swish0(inp, oup, stride, Kw, Ka):
+            return nn.Sequential(
+                # dw
+                Conv2d(inp, inp, 3, Kw[0], Ka[0], stride, 1, groups=inp, bias=False),
+                nn.BatchNorm2d(inp),
+                layerout_quantize_func(q_bit=qbit),
+                # pw
+                Conv2d_with_swish(inp, oup, 1, Kw[1], Ka[1], 1, 0, bias=False),
+                nn.BatchNorm2d(oup),
+                layerout_quantize_func(q_bit=qbit),
+                )
+
+        def conv_dw_with_swish(inp, oup, stride, Kw, Ka):
+            return nn.Sequential(
+                # dw
+                Conv2d_with_swish(inp, inp, 3, Kw[0], Ka[0], stride, 1, groups=inp, bias=False),
+                nn.BatchNorm2d(inp),
+                layerout_quantize_func(q_bit=qbit),
+                # pw
+                Conv2d_with_swish(inp, oup, 1, Kw[1], Ka[1], 1, 0, bias=False),
+                nn.BatchNorm2d(oup),
+                layerout_quantize_func(q_bit=qbit),
                 )
 
         def conv_dw(inp, oup, stride, Kw, Ka):
@@ -247,7 +273,7 @@ class MobileNetV1_swish(nn.Module):
             #nn.AvgPool2d(7)
             nn.AdaptiveAvgPool2d(1) #27 14
         )
-        self.fc = Linear(1024, 100)
+        self.fc = Linear_with_swish(1024, 100)
 
     def get_layer_inputs(self):
             return self.layer_inputs
