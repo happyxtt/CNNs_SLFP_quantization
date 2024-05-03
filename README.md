@@ -13,12 +13,6 @@ The project has been tested on the CIFAR-100 and ImageNet-1k datasets, and curre
 3. Model optimization. By optimizing the activation functions in the network, model performance is further improved.
 4. After model optimization, 8-bit SLFP quantization and retraining, the accuracy of the quantized models can exceed the FP32 baseline.
 
-## Dependencies
-
-- Python 3.6+
-- PyTorch 1.0+
-- torchvision 0.2.2+
-
 ## Installation and Running
 
 1. Clone this repository
